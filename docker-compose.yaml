@@ -1,0 +1,32 @@
+services:
+  census3-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: census3-bigquery-service
+    env_file: .env
+    ports:
+      - "${CENSUS3_API_PORT:-8080}:${CENSUS3_API_PORT:-8080}"
+    volumes:
+      # Persist snapshots data (only used in local storage mode)
+      - census3_data:/app/data
+      
+      # Mount Google Cloud credentials if using service account key file
+      # Uncomment and adjust path as needed:
+      # - ${GOOGLE_APPLICATION_CREDENTIALS}:${GOOGLE_APPLICATION_CREDENTIALS}:ro
+    restart: ${RESTART:-unless-stopped}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${CENSUS3_API_PORT:-8080}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  census3_data:
+    driver: local
