@@ -49,7 +49,7 @@ func TestSnapshotStorage(t *testing.T) {
 	censusRoot := types.HexBytes{0x01, 0x02, 0x03}
 	participantCount := 100
 
-	err = storage.AddSnapshot(snapshotDate, censusRoot, participantCount, 0.25)
+	err = storage.AddSnapshot(snapshotDate, censusRoot, participantCount, 0.25, "ethereum_balances")
 	if err != nil {
 		t.Fatalf("Failed to add snapshot: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestSnapshotStorage(t *testing.T) {
 	newerRoot := types.HexBytes{0x04, 0x05, 0x06}
 	newerCount := 200
 
-	err = storage.AddSnapshot(newerDate, newerRoot, newerCount, 1.0)
+	err = storage.AddSnapshot(newerDate, newerRoot, newerCount, 1.0, "ethereum_balances_recent")
 	if err != nil {
 		t.Fatalf("Failed to add newer snapshot: %v", err)
 	}

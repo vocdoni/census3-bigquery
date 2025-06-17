@@ -21,27 +21,31 @@ import (
 
 // GitStorage manages snapshots in a Git repository
 type GitStorage struct {
-	repo      *git.Repository
-	worktree  *git.Worktree
-	auth      *http.BasicAuth
-	repoURL   string
-	localPath string
-	snapshots []Snapshot
-	mu        sync.RWMutex
+	repo               *git.Repository
+	worktree           *git.Worktree
+	auth               *http.BasicAuth
+	repoURL            string
+	localPath          string
+	snapshots          []Snapshot
+	maxSnapshotsToKeep int
+	skipCSVUpload      bool
+	mu                 sync.RWMutex
 }
 
 // NewGitStorage creates a new Git storage instance
-func NewGitStorage(repoURL, pat, localPath string) (*GitStorage, error) {
+func NewGitStorage(repoURL, pat, localPath string, maxSnapshotsToKeep int, skipCSVUpload bool) (*GitStorage, error) {
 	auth := &http.BasicAuth{
 		Username: "token", // GitHub PAT uses "token" as username
 		Password: pat,
 	}
 
 	gs := &GitStorage{
-		auth:      auth,
-		repoURL:   repoURL,
-		localPath: localPath,
-		snapshots: make([]Snapshot, 0),
+		auth:               auth,
+		repoURL:            repoURL,
+		localPath:          localPath,
+		snapshots:          make([]Snapshot, 0),
+		maxSnapshotsToKeep: maxSnapshotsToKeep,
+		skipCSVUpload:      skipCSVUpload,
 	}
 
 	return gs, nil
@@ -174,24 +178,16 @@ func (gs *GitStorage) saveSnapshots() error {
 	return nil
 }
 
-// AddSnapshot adds a new snapshot with compressed CSV file to Git repository
-func (gs *GitStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, csvPath string, minBalance float64) error {
+// AddSnapshot adds a new snapshot and force pushes to maintain clean repository
+func (gs *GitStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, csvPath string, minBalance float64, queryName string) error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
 
-	// Generate filename for compressed CSV
-	filename := gs.generateFilename(snapshotDate, minBalance)
-	compressedPath := filepath.Join(gs.localPath, "snapshots", filename)
+	var filename string
 
-	// Ensure snapshots directory exists
-	snapshotsDir := filepath.Join(gs.localPath, "snapshots")
-	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create snapshots directory: %w", err)
-	}
-
-	// Compress CSV file
-	if err := gs.compressFile(csvPath, compressedPath); err != nil {
-		return fmt.Errorf("failed to compress CSV file: %w", err)
+	// Generate filename for compressed CSV if not skipping upload
+	if !gs.skipCSVUpload {
+		filename = gs.generateFilename(snapshotDate, minBalance, queryName)
 	}
 
 	// Create snapshot entry
@@ -201,34 +197,94 @@ func (gs *GitStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBy
 		ParticipantCount: participantCount,
 		CreatedAt:        time.Now(),
 		MinBalance:       minBalance,
-		Filename:         filename,
+		QueryName:        queryName,
+		Filename:         filename, // Will be empty if skipping CSV upload
 	}
 
+	// Add new snapshot and sort by date (most recent first)
 	gs.snapshots = append(gs.snapshots, snapshot)
-
-	// Sort snapshots by snapshot date (most recent first)
 	sort.Slice(gs.snapshots, func(i, j int) bool {
 		return gs.snapshots[i].SnapshotDate.After(gs.snapshots[j].SnapshotDate)
 	})
 
-	// Save snapshots.json
+	// Write fresh snapshots.json (keep all entries, don't remove any)
 	if err := gs.saveSnapshots(); err != nil {
 		return fmt.Errorf("failed to save snapshots.json: %w", err)
 	}
 
-	// Add files to git
-	if _, err := gs.worktree.Add("snapshots.json"); err != nil {
-		return fmt.Errorf("failed to add snapshots.json to git: %w", err)
+	// Add the new CSV file (if not skipping CSV upload)
+	if !gs.skipCSVUpload && filename != "" {
+		snapshotsDir := filepath.Join(gs.localPath, "snapshots")
+		if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create snapshots directory: %w", err)
+		}
+
+		// Compress and write the new CSV file
+		compressedPath := filepath.Join(snapshotsDir, filename)
+		if err := gs.compressFile(csvPath, compressedPath); err != nil {
+			return fmt.Errorf("failed to compress CSV file: %w", err)
+		}
 	}
 
-	relativeCompressedPath := filepath.Join("snapshots", filename)
-	if _, err := gs.worktree.Add(relativeCompressedPath); err != nil {
-		return fmt.Errorf("failed to add compressed file to git: %w", err)
+	// Identify and remove old CSV files (keep only the most recent ones)
+	if len(gs.snapshots) > gs.maxSnapshotsToKeep {
+		// Create a map of filenames to keep (most recent ones)
+		filesToKeep := make(map[string]bool)
+		for i := 0; i < gs.maxSnapshotsToKeep && i < len(gs.snapshots); i++ {
+			if gs.snapshots[i].Filename != "" {
+				filesToKeep[gs.snapshots[i].Filename] = true
+			}
+		}
+
+		// Find all CSV files in the snapshots directory
+		snapshotsDir := filepath.Join(gs.localPath, "snapshots")
+		if entries, err := os.ReadDir(snapshotsDir); err == nil {
+			var filesToRemove []string
+			for _, entry := range entries {
+				if !entry.IsDir() && filepath.Ext(entry.Name()) == ".gz" {
+					// If this file is not in the "keep" list, mark it for removal
+					if !filesToKeep[entry.Name()] {
+						filesToRemove = append(filesToRemove, entry.Name())
+					}
+				}
+			}
+
+			if len(filesToRemove) > 0 {
+				log.Info().
+					Int("files_to_remove", len(filesToRemove)).
+					Int("files_to_keep", len(filesToKeep)).
+					Int("total_snapshots", len(gs.snapshots)).
+					Int("max_limit", gs.maxSnapshotsToKeep).
+					Msg("Removing old CSV files (keeping all snapshot entries)")
+
+				// Remove old CSV files from disk and git
+				for _, fileToRemove := range filesToRemove {
+					filePath := filepath.Join(snapshotsDir, fileToRemove)
+
+					// Remove from disk
+					if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+						log.Warn().Err(err).Str("file", fileToRemove).Msg("Failed to remove old snapshot file from disk")
+					}
+
+					// Remove from git (only if it exists)
+					relativeFilePath := filepath.Join("snapshots", fileToRemove)
+					if _, err := gs.worktree.Remove(relativeFilePath); err != nil {
+						// Only log as debug since file might not be in git yet
+						log.Debug().Err(err).Str("file", fileToRemove).Msg("File not found in git (might not be tracked)")
+					}
+				}
+			}
+		}
+	}
+
+	// Add all files to git
+	if _, err := gs.worktree.Add("."); err != nil {
+		return fmt.Errorf("failed to add files to git: %w", err)
 	}
 
 	// Commit changes
-	commitMsg := fmt.Sprintf("Add snapshot %s with %d participants",
-		snapshotDate.Format("2006-01-02 15:04:05"), participantCount)
+	commitMsg := fmt.Sprintf("Update snapshots - %s with %d participants (keeping %d snapshots)",
+		snapshotDate.Format("2006-01-02 15:04:05"), participantCount, len(gs.snapshots))
 
 	_, err := gs.worktree.Commit(commitMsg, &git.CommitOptions{
 		Author: &object.Signature{
@@ -241,15 +297,19 @@ func (gs *GitStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBy
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	// Push changes
+	// Force push to overwrite remote repository
 	err = gs.repo.Push(&git.PushOptions{
-		Auth: gs.auth,
+		Auth:  gs.auth,
+		Force: true, // Force push to maintain clean history
 	})
 	if err != nil {
-		return fmt.Errorf("failed to push changes: %w", err)
+		return fmt.Errorf("failed to force push changes: %w", err)
 	}
 
-	log.Info().Str("filename", filename).Msg("Successfully pushed snapshot to Git repository")
+	log.Info().
+		Str("filename", filename).
+		Int("total_snapshots", len(gs.snapshots)).
+		Msg("Successfully force pushed snapshot to Git repository")
 	return nil
 }
 
@@ -279,9 +339,9 @@ func (gs *GitStorage) GetLatestSnapshot() *Snapshot {
 }
 
 // generateFilename generates a filename for the compressed CSV
-func (gs *GitStorage) generateFilename(snapshotDate time.Time, minBalance float64) string {
+func (gs *GitStorage) generateFilename(snapshotDate time.Time, minBalance float64, queryName string) string {
 	timestamp := snapshotDate.Format("2006-01-02-150405")
-	return fmt.Sprintf("%s-ethereum-%.2f.gz", timestamp, minBalance)
+	return fmt.Sprintf("%s-%s-%.2f.gz", timestamp, queryName, minBalance)
 }
 
 // compressFile compresses a file using gzip

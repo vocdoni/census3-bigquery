@@ -43,7 +43,7 @@ func New(cfg *config.Config) (*Service, error) {
 	if cfg.GitHubEnabled {
 		// Initialize Git storage
 		var err error
-		gitStorage, err = storage.NewGitStorage(cfg.GitHubRepo, cfg.GitHubPAT, "./git-repo")
+		gitStorage, err = storage.NewGitStorage(cfg.GitHubRepo, cfg.GitHubPAT, "./git-repo", cfg.MaxSnapshotsToKeep, cfg.SkipCSVUpload)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("failed to create Git storage: %w", err)
@@ -97,12 +97,22 @@ func New(cfg *config.Config) (*Service, error) {
 // Start starts the service
 func (s *Service) Start() error {
 	log.Info().Msg("Starting census3-bigquery service")
+
+	// Log all configuration values
 	log.Info().
 		Dur("period", s.config.Period).
 		Int("api_port", s.config.APIPort).
+		Str("storage_path", s.config.StoragePath).
 		Str("project", s.config.Project).
+		Interface("min_balances", s.config.MinBalances).
+		Str("query_name", s.config.QueryName).
+		Str("host", s.config.Host).
+		Int("batch_size", s.config.BatchSize).
 		Bool("github_enabled", s.config.GitHubEnabled).
-		Msg("Service configuration")
+		Str("github_repo", s.config.GitHubRepo).
+		Int("max_snapshots_to_keep", s.config.MaxSnapshotsToKeep).
+		Bool("skip_csv_upload", s.config.SkipCSVUpload).
+		Msg("Service configuration loaded")
 
 	// Start API server in a goroutine (only if not using Git storage)
 	if s.apiServer != nil {
@@ -169,7 +179,7 @@ func (s *Service) runPeriodicSync() {
 
 // performSync performs a single synchronization cycle
 func (s *Service) performSync() error {
-	snapshotDate := time.Now().Truncate(time.Hour)
+	snapshotDate := time.Now().Truncate(time.Minute)
 	log.Info().Time("snapshot_date", snapshotDate).Msg("Starting sync")
 
 	// Process each minimum balance sequentially
@@ -188,9 +198,10 @@ func (s *Service) performSync() error {
 		// Step 1: Fetch data from BigQuery and save to CSV
 		log.Info().Msg("Fetching data from BigQuery...")
 		bqConfig := bigquery.Config{
-			Project:    s.config.Project,
-			MinBalance: minBalance,
-			MaxCount:   s.config.MaxCount,
+			Project:     s.config.Project,
+			MinBalance:  minBalance,
+			QueryName:   s.config.QueryName,
+			QueryParams: make(map[string]interface{}), // Additional parameters can be added here
 		}
 
 		participantCount, err := s.bigqueryClient.FetchBalancesToCSV(s.ctx, bqConfig, csvPath)
@@ -216,13 +227,13 @@ func (s *Service) performSync() error {
 		// Step 3: Store snapshot based on storage type
 		if s.config.GitHubEnabled {
 			// Use Git storage
-			if err := s.gitStorage.AddSnapshot(snapshotDate, censusRoot, actualCount, csvPath, minBalance); err != nil {
+			if err := s.gitStorage.AddSnapshot(snapshotDate, censusRoot, actualCount, csvPath, minBalance, s.config.QueryName); err != nil {
 				return fmt.Errorf("failed to store snapshot to Git for balance %.2f: %w", minBalance, err)
 			}
 			log.Info().Float64("min_balance", minBalance).Msg("Snapshot stored successfully to Git repository")
 		} else {
 			// Use local storage
-			if err := s.localStorage.AddSnapshot(snapshotDate, censusRoot, actualCount, minBalance); err != nil {
+			if err := s.localStorage.AddSnapshot(snapshotDate, censusRoot, actualCount, minBalance, s.config.QueryName); err != nil {
 				return fmt.Errorf("failed to store snapshot locally for balance %.2f: %w", minBalance, err)
 			}
 			log.Info().Float64("min_balance", minBalance).Msg("Snapshot stored successfully to local storage")

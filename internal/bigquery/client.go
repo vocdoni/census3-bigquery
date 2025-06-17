@@ -38,9 +38,10 @@ type Client struct {
 
 // Config holds BigQuery configuration
 type Config struct {
-	Project    string
-	MinBalance float64
-	MaxCount   int
+	Project     string
+	MinBalance  float64
+	QueryName   string
+	QueryParams map[string]interface{} // Additional query parameters
 }
 
 // NewClient creates a new BigQuery client
@@ -58,35 +59,55 @@ func (c *Client) Close() error {
 	return c.client.Close()
 }
 
-// FetchBalancesToCSV fetches balances from BigQuery and saves them to a CSV file
+// FetchBalancesToCSV fetches balances from BigQuery using modular queries and saves them to a CSV file
 func (c *Client) FetchBalancesToCSV(ctx context.Context, cfg Config, csvPath string) (int, error) {
+	// Get the query from the registry
+	query, err := GetQuery(cfg.QueryName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get query: %w", err)
+	}
+
 	// Validate minimum balance
 	minEth, ok := new(big.Rat).SetString(fmt.Sprintf("%.18f", cfg.MinBalance))
 	if !ok {
 		return 0, fmt.Errorf("invalid minimum balance: %f", cfg.MinBalance)
 	}
 
-	// Build SQL query
-	sql := `
-		SELECT address, eth_balance
-		FROM ` + "`bigquery-public-data.crypto_ethereum.balances`" + `
-		WHERE eth_balance >= @min
-		ORDER BY eth_balance DESC`
-
-	params := []bigquery.QueryParameter{
-		{Name: "min", Value: ethToWei(minEth)}, // compare apples-to-apples in wei
+	// Prepare query parameters
+	queryParams := map[string]interface{}{
+		"min_balance": ethToWei(minEth), // compare apples-to-apples in wei
 	}
 
-	if cfg.MaxCount > 0 {
-		sql += fmt.Sprintf("\n		LIMIT %d", cfg.MaxCount)
+	// Add any additional query parameters
+	for key, value := range cfg.QueryParams {
+		queryParams[key] = value
 	}
+
+	// Validate that all required parameters are provided
+	if err := ValidateQueryParameters(query, queryParams); err != nil {
+		return 0, fmt.Errorf("query parameter validation failed: %w", err)
+	}
+
+	// Process the SQL template (no LIMIT functionality)
+	sql := ProcessQueryTemplate(query.SQL, false)
+
+	// Convert parameters to BigQuery format
+	var bqParams []bigquery.QueryParameter
+	for key, value := range queryParams {
+		bqParams = append(bqParams, bigquery.QueryParameter{
+			Name:  key,
+			Value: value,
+		})
+	}
+
+	log.Printf("Executing query '%s' with parameters: %v", cfg.QueryName, queryParams)
 
 	// Execute query
 	q := c.client.Query(sql)
-	q.Parameters = params
+	q.Parameters = bqParams
 	it, err := q.Read(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute query: %w", err)
+		return 0, fmt.Errorf("failed to execute query '%s': %w", cfg.QueryName, err)
 	}
 
 	// Create CSV file

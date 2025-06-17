@@ -18,6 +18,7 @@ type Snapshot struct {
 	ParticipantCount int            `json:"participantCount"`
 	CreatedAt        time.Time      `json:"createdAt"`
 	MinBalance       float64        `json:"minBalance"`         // ETH amount used to compute the census
+	QueryName        string         `json:"queryName"`          // BigQuery query name used to generate this snapshot
 	Filename         string         `json:"filename,omitempty"` // Optional: compressed CSV filename for Git storage
 }
 
@@ -95,7 +96,7 @@ func (s *SnapshotStorage) Save() error {
 }
 
 // AddSnapshot adds a new snapshot to storage
-func (s *SnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, minBalance float64) error {
+func (s *SnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, minBalance float64, queryName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -105,6 +106,7 @@ func (s *SnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.H
 		ParticipantCount: participantCount,
 		CreatedAt:        time.Now(),
 		MinBalance:       minBalance,
+		QueryName:        queryName,
 	}
 
 	s.snapshots = append(s.snapshots, snapshot)

@@ -12,22 +12,24 @@ import (
 type Config struct {
 	// Service configuration
 	Period      time.Duration `mapstructure:"period"`
-	APIPort     int           `mapstructure:"api_port"`
-	StoragePath string        `mapstructure:"storage_path"`
+	APIPort     int           `mapstructure:"api-port"`
+	StoragePath string        `mapstructure:"storage-path"`
 
 	// BigQuery configuration
 	Project     string    `mapstructure:"project"`
-	MinBalances []float64 `mapstructure:"min_balances"`
-	MaxCount    int       `mapstructure:"max_count"`
+	MinBalances []float64 `mapstructure:"min-balances"`
+	QueryName   string    `mapstructure:"query-name"`
 
 	// Census configuration
 	Host      string `mapstructure:"host"`
-	BatchSize int    `mapstructure:"batch_size"`
+	BatchSize int    `mapstructure:"batch-size"`
 
 	// GitHub configuration
-	GitHubEnabled bool   `mapstructure:"github-enabled"`
-	GitHubPAT     string `mapstructure:"github-pat"`
-	GitHubRepo    string `mapstructure:"github-repo"`
+	GitHubEnabled      bool   `mapstructure:"github-enabled"`
+	GitHubPAT          string `mapstructure:"github-pat"`
+	GitHubRepo         string `mapstructure:"github-repo"`
+	MaxSnapshotsToKeep int    `mapstructure:"max-snapshots-to-keep"`
+	SkipCSVUpload      bool   `mapstructure:"skip-csv-upload"`
 }
 
 // Load loads configuration from flags and environment variables
@@ -38,31 +40,36 @@ func Load() (*Config, error) {
 	pflag.String("storage-path", "./snapshots.json", "Path to store snapshots")
 	pflag.String("project", "", "GCP project ID for BigQuery (required)")
 	pflag.Float64Slice("min-balances", []float64{0.25}, "Minimum ETH balances (can specify multiple)")
-	pflag.Int("max-count", 100, "Maximum number of addresses to fetch")
+	pflag.String("query-name", "ethereum_balances", "BigQuery query to execute")
 	pflag.String("host", "http://localhost:8080", "Vocdoni node host URL")
 	pflag.Int("batch-size", 5000, "Batch size for census creation")
 	pflag.Bool("github-enabled", false, "Enable GitHub storage mode")
 	pflag.String("github-pat", "", "GitHub Personal Access Token")
 	pflag.String("github-repo", "", "GitHub repository URL")
+	pflag.Int("max-snapshots-to-keep", 5, "Maximum number of snapshots to keep in GitHub repository")
+	pflag.Bool("skip-csv-upload", false, "Skip uploading CSV files to Git repository (metadata only)")
 
 	pflag.Parse()
 
-	// Set default values in viper
+	// Set default values in viper (excluding min-balances which we handle manually)
 	viper.SetDefault("period", time.Hour)
-	viper.SetDefault("api_port", 8080)
-	viper.SetDefault("storage_path", "./snapshots.json")
+	viper.SetDefault("api-port", 8080)
+	viper.SetDefault("storage-path", "./snapshots.json")
 	viper.SetDefault("project", "")
-	viper.SetDefault("min_balances", []float64{0.25})
-	viper.SetDefault("max_count", 100)
+	viper.SetDefault("query-name", "ethereum_balances")
 	viper.SetDefault("host", "http://localhost:8080")
-	viper.SetDefault("batch_size", 5000)
-	viper.SetDefault("github_enabled", false)
-	viper.SetDefault("github_pat", "")
-	viper.SetDefault("github_repo", "")
+	viper.SetDefault("batch-size", 5000)
+	viper.SetDefault("github-enabled", false)
+	viper.SetDefault("github-pat", "")
+	viper.SetDefault("github-repo", "")
+	viper.SetDefault("max-snapshots-to-keep", 5)
+	viper.SetDefault("skip-csv-upload", false)
 
-	// Bind flags to viper
-	if err := viper.BindPFlags(pflag.CommandLine); err != nil {
-		return nil, fmt.Errorf("failed to bind flags: %w", err)
+	// Bind flags to viper (excluding min-balances which we handle manually)
+	for _, flag := range []string{"period", "api-port", "storage-path", "project", "query-name", "host", "batch-size", "github-enabled", "github-pat", "github-repo", "max-snapshots-to-keep", "skip-csv-upload"} {
+		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
+			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
+		}
 	}
 
 	// Set environment variable prefix
@@ -75,16 +82,26 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("storage-path", "CENSUS3_STORAGE_PATH")
 	_ = viper.BindEnv("project", "CENSUS3_PROJECT")
 	_ = viper.BindEnv("min-balances", "CENSUS3_MIN_BALANCES")
-	_ = viper.BindEnv("max-count", "CENSUS3_MAX_COUNT")
+	_ = viper.BindEnv("query-name", "CENSUS3_QUERY_NAME")
 	_ = viper.BindEnv("host", "CENSUS3_HOST")
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
 	_ = viper.BindEnv("github-enabled", "CENSUS3_GITHUB_ENABLED")
 	_ = viper.BindEnv("github-pat", "CENSUS3_GITHUB_PAT")
 	_ = viper.BindEnv("github-repo", "CENSUS3_GITHUB_REPO")
+	_ = viper.BindEnv("max-snapshots-to-keep", "CENSUS3_MAX_SNAPSHOTS_TO_KEEP")
+	_ = viper.BindEnv("skip-csv-upload", "CENSUS3_SKIP_CSV_UPLOAD")
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Handle min-balances manually since viper has issues with float64 slices
+	if minBalancesFlag, err := pflag.CommandLine.GetFloat64Slice("min-balances"); err == nil && len(minBalancesFlag) > 0 {
+		cfg.MinBalances = minBalancesFlag
+	} else {
+		// If no flag was provided, use default
+		cfg.MinBalances = []float64{0.25}
 	}
 
 	// Validate required fields
