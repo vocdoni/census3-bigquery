@@ -7,9 +7,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
 
-	"census3-bigquery/internal/bigquery"
-	"census3-bigquery/internal/config"
-	"census3-bigquery/internal/service"
+	"census3-bigquery/bigquery"
+	"census3-bigquery/config"
+	"census3-bigquery/service"
 )
 
 func main() {
