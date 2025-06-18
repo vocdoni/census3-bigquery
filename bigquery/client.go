@@ -3,14 +3,16 @@ package bigquery
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/big"
 	"os"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/api/iterator"
+
+	"census3-bigquery/log"
 )
 
 // BigQuery's column is NUMERIC (gwei), 1 ETH = 1 000 000 000 gwei.
@@ -100,7 +102,7 @@ func (c *Client) FetchBalancesToCSV(ctx context.Context, cfg Config, csvPath str
 		})
 	}
 
-	log.Printf("Executing query '%s' with parameters: %v", cfg.QueryName, queryParams)
+	log.Info().Str("query_name", cfg.QueryName).Interface("parameters", queryParams).Msg("Executing query")
 
 	// Execute query
 	q := c.client.Query(sql)
@@ -117,7 +119,7 @@ func (c *Client) FetchBalancesToCSV(ctx context.Context, cfg Config, csvPath str
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			log.Printf("Warning: failed to close CSV file: %v", err)
+			log.Warn().Err(err).Msg("Failed to close CSV file")
 		}
 	}()
 
@@ -167,6 +169,108 @@ func (c *Client) FetchSingleAddress(ctx context.Context, address string) (*balan
 		return &r, nil
 	default:
 		return nil, fmt.Errorf("iterator error: %w", err)
+	}
+}
+
+// Participant represents a census participant with address and balance
+type Participant struct {
+	Address common.Address
+	Balance *big.Int
+}
+
+// StreamBalances streams balance data from BigQuery to a channel
+func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh chan<- Participant, errorCh chan<- error) {
+	defer close(participantCh)
+	defer close(errorCh)
+
+	// Get the query from the registry
+	query, err := GetQuery(cfg.QueryName)
+	if err != nil {
+		errorCh <- fmt.Errorf("failed to get query: %w", err)
+		return
+	}
+
+	// Validate minimum balance
+	minEth, ok := new(big.Rat).SetString(fmt.Sprintf("%.18f", cfg.MinBalance))
+	if !ok {
+		errorCh <- fmt.Errorf("invalid minimum balance: %f", cfg.MinBalance)
+		return
+	}
+
+	// Prepare query parameters
+	queryParams := map[string]interface{}{
+		"min_balance": ethToWei(minEth), // compare apples-to-apples in wei
+	}
+
+	// Add any additional query parameters
+	for key, value := range cfg.QueryParams {
+		queryParams[key] = value
+	}
+
+	// Validate that all required parameters are provided
+	if err := ValidateQueryParameters(query, queryParams); err != nil {
+		errorCh <- fmt.Errorf("query parameter validation failed: %w", err)
+		return
+	}
+
+	// Process the SQL template (no LIMIT functionality)
+	sql := ProcessQueryTemplate(query.SQL, false)
+
+	// Convert parameters to BigQuery format
+	var bqParams []bigquery.QueryParameter
+	for key, value := range queryParams {
+		bqParams = append(bqParams, bigquery.QueryParameter{
+			Name:  key,
+			Value: value,
+		})
+	}
+
+	log.Info().Str("query_name", cfg.QueryName).Interface("parameters", queryParams).Msg("Executing streaming query")
+
+	// Execute query
+	q := c.client.Query(sql)
+	q.Parameters = bqParams
+	it, err := q.Read(ctx)
+	if err != nil {
+		errorCh <- fmt.Errorf("failed to execute query '%s': %w", cfg.QueryName, err)
+		return
+	}
+
+	// Stream results to channel
+	for {
+		var r balanceRow
+		switch err := it.Next(&r); err {
+		case iterator.Done:
+			return
+		case nil:
+			// Convert to participant and send to channel
+			if !common.IsHexAddress(r.Address) {
+				log.Warn().Str("address", r.Address).Msg("Skipping invalid address format")
+				continue
+			}
+
+			address := common.HexToAddress(r.Address)
+			// Convert balance from wei to integer (multiply by 100 as in original code)
+			balanceETH := weiToETH(r.Balance)
+			balanceFloat, _ := balanceETH.Float64()
+			balanceInt := big.NewInt(int64(balanceFloat * 100))
+
+			participant := Participant{
+				Address: address,
+				Balance: balanceInt,
+			}
+
+			select {
+			case participantCh <- participant:
+				// Successfully sent
+			case <-ctx.Done():
+				errorCh <- ctx.Err()
+				return
+			}
+		default:
+			errorCh <- fmt.Errorf("iterator error: %w", err)
+			return
+		}
 	}
 }
 

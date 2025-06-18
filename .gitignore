@@ -1,2 +1,9 @@
 git-repo
 .env
+
+# Query configuration (users should copy from queries.yaml.example)
+queries.yaml
+
+# Temporary files from Google Cloud setup
+gcp-service-account-key.json
+gcp-key-base64.txt

@@ -1,93 +1,58 @@
 # Census3 BigQuery Service
 
-A service that automatically creates Ethereum census snapshots by querying BigQuery for ETH balances and creating census merkle-trees for Davinci.vote. Supports both local storage and GitHub repository storage with compressed CSV files.
+A service that automatically creates Ethereum census snapshots by querying BigQuery for ETH balances and creating census merkle-trees for Vocdoni. Features a unified KV storage system with HTTP API for accessing snapshots and census data.
 
 ## Features
 
+- **YAML-Based Query Configuration**: Flexible query management with user-defined names and independent scheduling
+- **Multiple Query Support**: Run multiple queries simultaneously with different parameters and periods
 - **Automated Snapshots**: Periodic creation of census snapshots from Ethereum balance data
-- **Multiple Balance Thresholds**: Support for multiple minimum ETH balance filters in a single run
 - **Modular BigQuery System**: Choose from multiple predefined queries or add custom ones
-- **Dual Storage Modes**: 
-  - Local storage with HTTP API
-  - GitHub repository storage with compressed CSV files
-- **BigQuery Integration**: Efficient querying of Ethereum balance data
-- **Vocdoni Census Creation**: Automatic census tree creation on Davinci.vote nodes
-
-## Quick Start
-
-### Using Docker Compose (Recommended)
-
-1. **Clone and configure**:
-   ```bash
-   git clone <repository-url>
-   cd census3-bigquery
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-2. **Start the service**:
-   ```bash
-   docker-compose up -d
-   ```
-
-### Using Go Binary
-
-1. **Install dependencies**:
-   ```bash
-   go mod download
-   ```
-
-2. **Run the service**:
-   ```bash
-   go run ./cmd/service --project=your-gcp-project --min-balances=0.25,1.0,5.0
-   ```
+- **HTTP API**: RESTful API for accessing snapshots and census data
 
 ## Configuration
 
-### Command Line Flags
+### YAML-Based Query Configuration
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--project` | GCP project ID for BigQuery (required) | - |
-| `--min-balances` | Minimum ETH balances (comma-separated) | `[0.25]` |
-| `--period` | Sync period (e.g., 1h, 30m) | `1h` |
-| `--api-port` | API server port | `8080` |
-| `--storage-path` | Path to store snapshots | `./snapshots.json` |
-| `--query-name` | BigQuery query to execute | `ethereum_balances` |
-| `--host` | Vocdoni node host URL | `http://localhost:8080` |
-| `--batch-size` | Batch size for census creation | `5000` |
-| `--list-queries` | List available BigQuery queries and exit | - |
-| `--github-enabled` | Enable GitHub storage mode | `false` |
-| `--github-pat` | GitHub Personal Access Token | - |
-| `--github-repo` | GitHub repository URL | - |
-| `--max-snapshots-to-keep` | Maximum snapshots to keep in repository | `5` |
-| `--skip-csv-upload` | Skip uploading CSV files (metadata only) | `false` |
+The service uses a YAML configuration file to define multiple queries with independent schedules and parameters. 
 
-### Environment Variables
+1. **Copy the example file**:
+   ```bash
+   cp queries.yaml.example queries.yaml
+   ```
 
-All flags can be configured via environment variables with the `CENSUS3_` prefix:
-
-| Environment Variable | Flag Equivalent |
-|---------------------|-----------------|
-| `CENSUS3_PROJECT` | `--project` |
-| `CENSUS3_MIN_BALANCES` | `--min-balances` |
-| `CENSUS3_PERIOD` | `--period` |
-| `CENSUS3_API_PORT` | `--api-port` |
-| `CENSUS3_STORAGE_PATH` | `--storage-path` |
-| `CENSUS3_HOST` | `--host` |
-| `CENSUS3_BATCH_SIZE` | `--batch-size` |
-| `CENSUS3_GITHUB_ENABLED` | `--github-enabled` |
-| `CENSUS3_GITHUB_PAT` | `--github-pat` |
-| `CENSUS3_GITHUB_REPO` | `--github-repo` |
-| `CENSUS3_MAX_SNAPSHOTS_TO_KEEP` | `--max-snapshots-to-keep` |
-| `CENSUS3_SKIP_CSV_UPLOAD` | `--skip-csv-upload` |
-| `CENSUS3_QUERY_NAME` | `--query-name` |
-
-## BigQuery Query System
-
-The service features a modular BigQuery system that allows you to choose from multiple predefined queries or easily add custom ones.
-
-### Available Queries
+2. **Edit the configuration**:
+   ```yaml
+   # queries.yaml
+   queries:
+     # Ethereum balance snapshots with different thresholds
+     - name: ethereum_balances_small_holders
+       query: ethereum_balances
+       period: 1h
+       parameters:
+         min_balance: 0.1
+         
+     - name: ethereum_balances_large_holders
+       query: ethereum_balances
+       period: 1h
+       parameters:
+         min_balance: 10.0
+         
+     # ERC20 token holders with independent schedules
+     - name: usdc_holders_1_token
+       query: erc20_holders
+       period: 30m
+       parameters:
+         token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
+         min_balance: 1000000  # 1 USDC (6 decimals)
+         
+     - name: dai_holders_1_token
+       query: erc20_holders
+       period: 2h
+       parameters:
+         token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
+         min_balance: 1000000000000000000  # 1 DAI (18 decimals)
+   ```
 
 Use `--list-queries` to see all available queries:
 
@@ -95,484 +60,287 @@ Use `--list-queries` to see all available queries:
 go run ./cmd/service --list-queries
 ```
 
-**Output:**
-```
-Available BigQuery queries:
 
-  ethereum_balances:
-    Description: Fetch Ethereum addresses with balance above minimum threshold
-    Parameters: [min_balance]
+#### Query Configuration Fields
 
-  ethereum_balances_recent:
-    Description: Fetch Ethereum addresses with recent activity and balance above threshold
-    Parameters: [min_balance]
+- **`name`**: User-defined identifier for this query instance (used in logs and API responses)
+- **`query`**: BigQuery query name from the registry (must exist in `bigquery/queries.go`)
+- **`period`**: How often to run this query (e.g., `1h`, `30m`, `2h`)
+- **`parameters`**: Query-specific parameters including `min_balance` and others
 
-  erc20_holders:
-    Description: Fetch ERC20 token holders above minimum balance threshold
-    Parameters: [token_address min_balance]
-```
+## HTTP API
 
-### Query Selection
+The service provides a RESTful API for accessing snapshots and census data:
 
-Select a query using the `--query-name` flag:
+#### `GET /snapshots`
+List all snapshots with pagination and filtering support.
 
+**Query Parameters:**
+- `page` (int): Page number (default: 1)
+- `pageSize` (int): Items per page (default: 20, max: 100)
+- `minBalance` (float): Filter by minimum balance
+- `queryName` (string): Filter by user-defined query name
+
+**Example:**
 ```bash
-# Use default ethereum_balances query
-go run ./cmd/service --project=my-project --min-balances=1.0
-
-# Use recent activity query
-go run ./cmd/service --project=my-project --query-name=ethereum_balances_recent --min-balances=0.5
-
-# Use ERC20 holders query (requires additional parameters)
-go run ./cmd/service --project=my-project --query-name=erc20_holders --min-balances=100
+curl "http://localhost:8080/snapshots?page=1&pageSize=10&minBalance=1.0"
 ```
 
-### Query Details
-
-#### `ethereum_balances` (Default)
-- **Description**: Fetches Ethereum addresses with balance above minimum threshold
-- **Parameters**: `min_balance`
-- **Use Case**: Standard ETH balance snapshots
-- **SQL**: Queries `bigquery-public-data.crypto_ethereum.balances`
-
-#### `ethereum_balances_recent`
-- **Description**: Fetches Ethereum addresses with recent activity (last 30 days) and balance above threshold
-- **Parameters**: `min_balance`
-- **Use Case**: Active addresses only, excludes dormant wallets
-- **SQL**: Joins balances with recent transactions
-
-#### `erc20_holders`
-- **Description**: Fetches ERC20 token holders above minimum balance threshold
-- **Parameters**: `token_address`, `min_balance`
-- **Use Case**: Token-specific census creation
-- **SQL**: Queries `bigquery-public-data.crypto_ethereum.token_transfers`
-- **Note**: Requires additional `token_address` parameter
-
-### Template System
-
-Queries use a template system with parameter substitution:
-
-- **`@min_balance`**: Replaced with the minimum balance in wei
-- **`@token_address`**: Custom parameter for ERC20 queries
-
-### Adding Custom Queries
-
-To add a new query, edit `internal/bigquery/queries.go`:
-
-```go
-"custom_query": {
-    Name: "custom_query",
-    Description: "Your custom BigQuery description",
-    SQL: `
-        SELECT address, eth_balance
-        FROM your_custom_table
-        WHERE eth_balance >= @min_balance
-        AND custom_field = @custom_param
-        ORDER BY eth_balance DESC`,
-    Parameters: []string{"min_balance", "custom_param"},
-},
-```
-
-### Query Configuration Examples
-
-**Environment Variables:**
-```bash
-# Use recent activity query
-export CENSUS3_QUERY_NAME=ethereum_balances_recent
-export CENSUS3_MIN_BALANCES=0.25,1.0,5.0
-go run ./cmd/service --project=my-project
-```
-
-**Docker Compose:**
-```yaml
-environment:
-  - CENSUS3_QUERY_NAME=ethereum_balances_recent
-  - CENSUS3_MIN_BALANCES=0.5,2.0
-```
-
-**Command Line:**
-```bash
-# Multiple balance thresholds with recent activity query
-go run ./cmd/service \
-  --project=my-gcp-project \
-  --query-name=ethereum_balances_recent \
-  --min-balances=0.1,0.5,1.0,5.0 \
-  --github-enabled \
-  --github-pat=ghp_xxxxxxxxxxxxxxxxxxxx \
-  --github-repo=https://github.com/org/eth-census-snapshots
-```
-
-## Storage Modes
-
-### Local Storage Mode (Default)
-
-- Stores snapshots in a local JSON file
-- Provides HTTP API for accessing snapshots
-- Suitable for development and single-instance deployments
-
-**API Endpoints:**
-- `GET /snapshots` - List all snapshots (ordered by most recent)
-- `GET /health` - Health check endpoint
-
-**Example snapshots.json:**
+**Response:**
 ```json
 {
   "snapshots": [
     {
-      "snapshotDate": "2025-06-16T18:00:00Z",
+      "snapshotDate": "2025-06-18T00:00:00Z",
       "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
-      "participantCount": 100,
-      "createdAt": "2025-06-16T18:01:23Z",
-      "minBalance": 0.25,
-      "queryName": "ethereum_balances"
+      "participantCount": 150,
+      "minBalance": 1.0,
+      "queryName": "ethereum_balances_medium_holders",
+      "queryType": "ethereum_balances",
+      "createdAt": "2025-06-18T00:01:23Z"
     }
-  ]
+  ],
+  "total": 25,
+  "page": 1,
+  "pageSize": 10,
+  "hasNext": true,
+  "hasPrev": false
 }
 ```
 
-### GitHub Storage Mode
+#### `GET /snapshots/latest`
+Get the most recent snapshot.
 
-- Stores snapshots in a Git repository
-- Compresses CSV files with gzip
-- Disables HTTP API
-- Suitable for distributed access and data sharing
-
-**Repository Structure:**
-```
-repository/
-├── snapshots.json           # Metadata with census roots and filenames
-└── snapshots/
-    ├── 2025-06-16-180000-ethereum_balances-0.25.gz
-    ├── 2025-06-16-180000-ethereum_balances-1.00.gz
-    ├── 2025-06-16-190000-ethereum_balances_recent-0.50.gz
-    └── ...
+**Example:**
+```bash
+curl "http://localhost:8080/snapshots/latest"
 ```
 
-**snapshots.json:**
+#### `GET /censuses/{root}/size`
+Get the number of participants in a census by its merkle root.
+
+**Example:**
+```bash
+curl "http://localhost:8080/censuses/0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12/size"
+```
+
+**Response:**
 ```json
 {
-  "snapshots": [
-    {
-      "snapshotDate": "2025-06-16T18:00:00Z",
-      "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
-      "participantCount": 100,
-      "createdAt": "2025-06-16T18:01:23Z",
-      "minBalance": 0.25,
-      "queryName": "ethereum_balances",
-      "filename": "2025-06-16-180000-ethereum_balances-0.25.gz"
-    }
-  ]
+  "size": 150
 }
 ```
 
-## Multiple Balance Thresholds
+#### `GET /censuses/{root}/proof?key={hexKey}`
+Generate a merkle proof for a specific key in the census.
 
-The service supports processing multiple minimum balance thresholds in a single run:
-
+**Example:**
 ```bash
-# Process three different balance thresholds
-go run ./cmd/service \
-  --project=my-gcp-project \
-  --min-balances=0.25,1.0,5.0 \
-  --github-enabled \
-  --github-pat=ghp_xxxxxxxxxxxxxxxxxxxx \
-  --github-repo=https://github.com/org/eth-census-snapshots
+curl "http://localhost:8080/censuses/0x832f.../proof?key=0x742d35Cc6634C0532925a3b8D4C9db96"
 ```
 
-This will create separate snapshots for each balance threshold:
-- `2025-06-16-180000-ethereum_balances-0.25.gz` (addresses with ≥0.25 ETH)
-- `2025-06-16-180000-ethereum_balances-1.00.gz` (addresses with ≥1.0 ETH)  
-- `2025-06-16-180000-ethereum_balances-5.00.gz` (addresses with ≥5.0 ETH)
-
-## Snapshot Retention & Repository Management
-
-### Automatic Cleanup
-The service automatically manages repository size by limiting the number of stored snapshots:
-
-- **Default Limit**: 5 snapshots total (configurable via `--max-snapshots-to-keep`)
-- **Cleanup Strategy**: Keeps the most recent snapshots, removes oldest ones
-- **Cross-Balance**: Retention applies across all balance thresholds combined
-
-### Force Push Strategy
-To maintain minimal repository size:
-
-- **Force Push**: Uses `git push --force` to overwrite remote history
-- **Clean State**: Repository always contains only the current snapshots
-- **No History Bloat**: Previous commits are discarded, keeping repository minimal
-- **GitHub Friendly**: Repository size stays constant regardless of runtime
-
-### Example Retention Behavior
-With `--max-snapshots-to-keep=5` and multiple balance thresholds:
-
-```bash
-# After several sync cycles, repository contains:
-snapshots/
-├── 2025-06-16-200000-ethereum_balances-0.25.gz  # Most recent
-├── 2025-06-16-200000-ethereum_balances-1.00.gz
-├── 2025-06-16-190000-ethereum_balances_recent-0.25.gz
-├── 2025-06-16-190000-ethereum_balances_recent-1.00.gz
-└── 2025-06-16-180000-ethereum_balances-0.25.gz  # Oldest kept
-
-# Older files automatically removed:
-# ❌ 2025-06-16-180000-ethereum_balances-1.00.gz (deleted)
-# ❌ 2025-06-16-170000-ethereum_balances-*.gz (deleted)
-```
-
-### Cleanup Logging
-The service provides detailed logging during cleanup:
-
-```json
-{"level":"info","removed_count":3,"kept_count":5,"max_limit":5,"message":"Cleaning up old snapshots"}
-{"level":"info","filename":"2025-06-16-200000-ethereum_balances-0.25.gz","message":"Successfully pushed snapshot to Git repository"}
-```
-
-### Metadata-Only Mode
-For ultra-minimal repository size, you can skip uploading CSV files entirely:
-
-```bash
-# Only store metadata (census roots) without CSV files
-go run ./cmd/service \
-  --project=my-gcp-project \
-  --github-enabled \
-  --github-pat=ghp_xxxxxxxxxxxxxxxxxxxx \
-  --github-repo=https://github.com/org/eth-census-snapshots \
-  --skip-csv-upload
-```
-
-**Benefits:**
-- **Minimal Storage**: Repository contains only snapshots.json (few KB)
-- **Fast Clones**: No large binary files to download
-- **GitHub Friendly**: Stays well under any size limits
-- **Census Roots Preserved**: All merkle tree roots still available for verification
-
-**Repository Structure (Metadata-Only):**
-```
-repository/
-└── snapshots.json           # Only metadata, no CSV files
-```
-
-**snapshots.json (Metadata-Only):**
+**Response:**
 ```json
 {
-  "snapshots": [
-    {
-      "snapshotDate": "2025-06-16T18:00:00Z",
-      "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
-      "participantCount": 100,
-      "createdAt": "2025-06-16T18:01:23Z",
-      "minBalance": 0.25,
-      "queryName": "ethereum_balances",
-      "filename": ""
-    }
-  ]
+  "root": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
+  "key": "0x742d35Cc6634C0532925a3b8D4C9db96",
+  "value": "0x64",
+  "siblings": ["0x...", "0x..."],
+  "weight": "100"
 }
 ```
 
-## Deployment Examples
+### Health Endpoint
 
-### Local Development
+#### `GET /health`
+Service health check.
 
-```bash
-export CENSUS3_PROJECT=my-gcp-project
-export CENSUS3_MIN_BALANCES=0.25,1.0
-export CENSUS3_HOST=https://sequencer1.davinci.vote
-go run ./cmd/service
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-06-18T00:00:00Z",
+  "service": "census3-bigquery"
+}
 ```
 
-### Docker with Local Storage
+## Step-by-step setup with Google Cloud configuration
 
+This service requires access to Google Cloud BigQuery to query Ethereum balance data. Follow these step-by-step instructions to set up your Google Cloud project and configure authentication.
+
+### Prerequisites
+
+- A Google Cloud account
+- Billing enabled on your Google Cloud account (BigQuery requires billing)
+- Docker and Docker Compose installed (for containerized deployment)
+
+### Step 1: Install Google Cloud CLI
+
+#### On macOS (using Homebrew)
 ```bash
-# Create .env file
-cat > .env << EOF
-CENSUS3_PROJECT=my-gcp-project
-CENSUS3_MIN_BALANCES=0.25,1.0,5.0
-CENSUS3_HOST=https://sequencer1.davinci.vote
-CENSUS3_GITHUB_ENABLED=false
-EOF
-
-# Start service
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f census3-service
-
-# Access API
-curl http://localhost:8080/snapshots
+brew install --cask google-cloud-sdk
 ```
 
-### Docker with GitHub Storage
-
+#### On Ubuntu/Debian
 ```bash
-# Create .env file
-cat > .env << EOF
-CENSUS3_PROJECT=my-gcp-project
-CENSUS3_MIN_BALANCES=0.25,1.0,5.0
-CENSUS3_HOST=https://sequencer1.davinci.vote
-CENSUS3_GITHUB_ENABLED=true
-CENSUS3_GITHUB_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
-CENSUS3_GITHUB_REPO=https://github.com/org/eth-census-snapshots
-EOF
+# Add the Cloud SDK distribution URI as a package source
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 
-# Start service (no API server in GitHub mode)
-docker-compose up -d
+# Import the Google Cloud public key
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 
-# Check logs
-docker-compose logs -f census3-service
+# Update and install the Cloud SDK
+sudo apt-get update && sudo apt-get install google-cloud-cli
 ```
 
-### Production Deployment
+### Step 2: Initialize gcloud and Authenticate
 
 ```bash
-# Create production .env
-cat > .env << EOF
-CENSUS3_PROJECT=production-gcp-project
-CENSUS3_MIN_BALANCES=0.1,0.25,0.5,1.0,5.0,10.0
-CENSUS3_PERIOD=1h
-CENSUS3_QUERY_NAME=ethereum_balances_recent
-CENSUS3_HOST=https://sequencer1.davinci.vote
-CENSUS3_BATCH_SIZE=10000
-CENSUS3_GITHUB_ENABLED=true
-CENSUS3_GITHUB_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
-CENSUS3_GITHUB_REPO=https://github.com/org/eth-census-snapshots
-RESTART=always
-EOF
+# Initialize gcloud (this will open a browser for authentication)
+gcloud init
 
-# Deploy
-docker-compose up -d
+# Alternatively, authenticate separately
+gcloud auth login
+
+# Set your default project (optional, can be done in step 3)
+gcloud config set project YOUR_PROJECT_ID
 ```
 
-## Google Cloud Authentication
+### Step 3: Create a Google Cloud Project
 
-### Using Default Credentials (Recommended)
+#### Option A: Create via gcloud CLI
+```bash
+# Create a new project
+gcloud projects create census3-bigquery-project --name="Census3 BigQuery Service"
 
-If running on Google Cloud (GCE, GKE, Cloud Run), the service will automatically use the default service account.
+# Set as default project
+gcloud config set project census3-bigquery-project
 
-### Using Service Account Key File
+# Enable billing (replace BILLING_ACCOUNT_ID with your billing account)
+gcloud billing projects link census3-bigquery-project --billing-account=BILLING_ACCOUNT_ID
+```
 
-1. **Create service account key**:
+#### Option B: Create via Google Cloud Console
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Click "Select a project" → "New Project"
+3. Enter project name: `Census3 BigQuery Service`
+4. Note the generated Project ID (e.g., `census3-bigquery-project-123456`)
+5. Enable billing for the project
+
+### Step 4: Enable Required APIs
+
+```bash
+# Enable BigQuery API
+gcloud services enable bigquery.googleapis.com
+
+# Verify the API is enabled
+gcloud services list --enabled --filter="name:bigquery"
+```
+
+### Step 5: Create a Service Account
+
+```bash
+# Create a service account
+gcloud iam service-accounts create census3-bigquery-sa \
+    --display-name="Census3 BigQuery Service Account" \
+    --description="Service account for Census3 BigQuery operations"
+
+# Get your project ID
+PROJECT_ID=$(gcloud config get-value project)
+
+# Grant BigQuery permissions to the service account
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:census3-bigquery-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/bigquery.jobUser"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:census3-bigquery-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/bigquery.dataViewer"
+```
+
+### Step 6: Generate Service Account Key
+
+```bash
+# Create and download the service account key
+gcloud iam service-accounts keys create ./gcp-service-account-key.json \
+    --iam-account=census3-bigquery-sa@$PROJECT_ID.iam.gserviceaccount.com
+
+# Verify the key was created
+ls -la gcp-service-account-key.json
+```
+
+**⚠️ Security Note**: Keep this key file secure and never commit it to version control!
+
+### Step 7: Test BigQuery Access
+
+```bash
+# Set the credentials environment variable
+export GOOGLE_APPLICATION_CREDENTIALS="./gcp-service-account-key.json"
+
+# Test BigQuery access
+bq ls
+
+# Or test with gcloud
+gcloud auth activate-service-account --key-file=./gcp-service-account-key.json
+gcloud auth list
+```
+
+## Docker Compose Configuration
+
+Now that you have your Google Cloud project set up, configure Docker Compose to use your credentials via environment variables.
+
+### Using Base64 Encoded Service Account Key
+
+This method stores the service account key as a base64-encoded environment variable, which is secure and doesn't require mounting files.
+
+1. **Convert your service account key to base64**:
    ```bash
-   gcloud iam service-accounts keys create key.json \
-     --iam-account=your-service-account@project.iam.gserviceaccount.com
+   # Convert the JSON key to base64 (single line, no wrapping)
+   base64 -w 0 gcp-service-account-key.json > gcp-key-base64.txt
+   
+   # Display the base64 content to copy
+   cat gcp-key-base64.txt
    ```
 
-2. **Mount in Docker**:
-   ```yaml
-   # In docker-compose.yaml
-   volumes:
-     - ./key.json:/app/key.json:ro
-   environment:
-     - GOOGLE_APPLICATION_CREDENTIALS=/app/key.json
+2. **Update your `.env` file**:
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit the .env file
+   nano .env
    ```
 
-### Required BigQuery Permissions
-
-The service account needs:
-- `bigquery.datasets.get`
-- `bigquery.tables.get`
-- `bigquery.jobs.create`
-- `roles/bigquery.jobUser`
-
-## Monitoring and Logging
-
-### Health Checks
-
-- **HTTP**: `GET /health` (local storage mode only)
-- **Docker**: Built-in healthcheck every 30s
-- **Logs**: Structured JSON logging with zerolog
-
-### Log Examples
-
-```json
-{"level":"info","time":"2025-06-16T18:00:00Z","message":"Starting census3-bigquery service"}
-{"level":"info","period":3600000,"api_port":8080,"project":"my-project","query_name":"ethereum_balances","github_enabled":true,"message":"Service configuration"}
-{"level":"info","message":"Using Git storage mode - API server disabled"}
-{"level":"info","message":"Running initial sync"}
-{"level":"info","min_balance":0.25,"balance_index":1,"total_balances":3,"message":"Processing balance threshold"}
-{"level":"info","participant_count":150,"min_balance":0.25,"message":"Fetched participants from BigQuery"}
-{"level":"info","census_root":"0x832f...","processed_count":150,"min_balance":0.25,"message":"Census created successfully"}
-{"level":"info","filename":"2025-06-16-180000-ethereum_balances-0.25.gz","message":"Successfully pushed snapshot to Git repository"}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **BigQuery Permission Denied**:
+3. **Configure the `.env` file**:
+   ```env
+   # Required: Your GCP Project ID
+   CENSUS3_PROJECT=census3-bigquery-project-123456
+   
+   # Google Cloud Credentials (Base64 encoded service account key)
+   GOOGLE_APPLICATION_CREDENTIALS_JSON=ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiY2Vuc3VzMy1iaWdxdWVyeS1wcm9qZWN0LTEyMzQ1NiIsCiAgInByaXZhdGVfa2V5X2lkIjogIjEyMzQ1NiIsCiAgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuLi4uXG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAiY2Vuc3VzMy1iaWdxdWVyeS1zYUBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEyMzQ1Njc4OTAiLAogICJhdXRoX3VyaSI6ICJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsCiAgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsCiAgImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9vYXV0aDIvdjEvY2VydHMiLAogICJjbGllbnRfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9yb2JvdC92MS9tZXRhZGF0YS94NTA5L2NlbnN1czMtYmlncXVlcnktc2ElNDBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIgp9
+   
+   # Service Configuration
+   CENSUS3_API_PORT=8080
+   CENSUS3_BATCH_SIZE=10000
+   CENSUS3_DATA_DIR=/app/.bigcensus3
+   CENSUS3_QUERIES_FILE=/app/queries.yaml
+   
+   # Docker Configuration
+   RESTART=unless-stopped
    ```
-   Error: failed to fetch BigQuery data: permission denied
+
+   **⚠️ Important**: Replace the example `GOOGLE_APPLICATION_CREDENTIALS_JSON` value with your actual base64-encoded service account key from step 1.
+
+4. **Create your queries configuration**:
+   ```bash
+   cp queries.yaml.example queries.yaml
+   # Edit queries.yaml with your desired query configurations
    ```
-   - Verify service account has BigQuery permissions
-   - Check `GOOGLE_APPLICATION_CREDENTIALS` path
 
-2. **GitHub Authentication Failed**:
+5. **Start the service**:
+   ```bash
+   docker-compose up -d
+   
+   # Check logs to verify authentication works
+   docker-compose logs -f census3-service
    ```
-   Error: failed to clone repository: authentication required
-   ```
-   - Verify GitHub PAT has repository access
-   - Check repository URL format
-
-3. **Census Creation Failed**:
-   ```
-   Error: failed to create census: connection refused
-   ```
-   - Verify Vocdoni node is accessible
-   - Check `CENSUS3_HOST` configuration
-
-4. **Query Not Found**:
-   ```
-   Error: query 'custom_query' not found in registry
-   ```
-   - Use `--list-queries` to see available queries
-   - Check query name spelling
-
-### Debug Mode
-
-Enable verbose logging:
-```bash
-export LOG_LEVEL=debug
-go run ./cmd/service --project=my-project
-```
-
-## Development
-
-### Building
-
-```bash
-# Build service binary
-go build ./cmd/service
-
-# Build Docker image
-docker build -t census3-bigquery .
-
-# Run tests
-go test ./...
-
-# Run linter
-golangci-lint run
-```
-
-### Project Structure
-
-```
-census3-bigquery/
-├── cmd/service/           # Service entry point
-├── internal/
-│   ├── api/              # HTTP API server
-│   ├── bigquery/         # BigQuery client and query registry
-│   ├── census/           # Census creation client
-│   ├── config/           # Configuration management
-│   ├── service/          # Main service orchestrator
-│   └── storage/          # Storage implementations
-├── Dockerfile            # Container definition
-├── docker-compose.yaml   # Local deployment
-├── .env.example         # Configuration template
-└── README.md            # This file
-```
-
-## License
-
-[Add your license information here]
-
-## Contributing
-
-[Add contributing guidelines here]

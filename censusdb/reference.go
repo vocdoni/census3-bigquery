@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vocdoni/arbo"
-	"github.com/vocdoni/davinci-node/types"
 )
 
 // CensusRef is a reference to a census. It holds the Merkle tree.
@@ -87,7 +86,7 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) 
 
 // FetchKeysAndValues fetches all keys and values from the Merkle tree.
 // Returns the keys as byte arrays and the values as BigInts.
-func (cr *CensusRef) FetchKeysAndValues() ([]types.HexBytes, []*types.BigInt, error) {
+func (cr *CensusRef) FetchKeysAndValues() ([]HexBytes, []*BigInt, error) {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
@@ -97,8 +96,8 @@ func (cr *CensusRef) FetchKeysAndValues() ([]types.HexBytes, []*types.BigInt, er
 		return nil, nil, err
 	}
 
-	var keys []types.HexBytes
-	var values []*types.BigInt
+	var keys []HexBytes
+	var values []*BigInt
 
 	for {
 		l := make([]byte, 3)
@@ -121,7 +120,7 @@ func (cr *CensusRef) FetchKeysAndValues() ([]types.HexBytes, []*types.BigInt, er
 			return nil, nil, err
 		}
 		keys = append(keys, k)
-		values = append(values, (*types.BigInt)(arbo.BytesToBigInt(v)))
+		values = append(values, (*BigInt)(arbo.BytesToBigInt(v)))
 	}
 
 	return keys, values, nil

@@ -1,0 +1,67 @@
+# Census3 BigQuery Queries Configuration
+# Copy this file to queries.yaml and customize your queries
+#
+# Each query configuration supports:
+# - name: User-defined name for this query instance (for identification)
+# - query: BigQuery query name (must exist in bigquery/queries.go)
+# - period: How often to run this query (e.g., 1h, 30m, 2h)
+# - parameters: Query-specific parameters (including min_balance)
+
+queries:
+  # Ethereum balance snapshots with different thresholds
+  - name: ethereum_balances_small_holders
+    query: ethereum_balances
+    period: 1h
+    parameters:
+      min_balance: 0.1
+      
+  - name: ethereum_balances_medium_holders
+    query: ethereum_balances
+    period: 1h
+    parameters:
+      min_balance: 1.0
+      
+  - name: ethereum_balances_large_holders
+    query: ethereum_balances
+    period: 1h
+    parameters:
+      min_balance: 10.0
+      
+  # Ethereum addresses with recent activity
+  - name: ethereum_recent_activity
+    query: ethereum_balances_recent
+    period: 2h
+    parameters:
+      min_balance: 0.5
+      
+  # ERC20 token holders - USDC (6 decimals, so 1000000 = 1 USDC)
+  - name: usdc_holders_1_token
+    query: erc20_holders
+    period: 30m
+    parameters:
+      token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
+      min_balance: 1000000
+      
+  # ERC20 token holders - DAI (18 decimals, so 1e18 = 1 DAI)
+  - name: dai_holders_1_token
+    query: erc20_holders
+    period: 2h
+    parameters:
+      token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
+      min_balance: 1000000000000000000
+      
+  # ERC20 token holders - WETH (18 decimals, so 1e17 = 0.1 WETH)
+  - name: weth_holders_point_1_token
+    query: erc20_holders
+    period: 4h
+    parameters:
+      token_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
+      min_balance: 100000000000000000
+
+# Notes:
+# - Each query runs independently with its own schedule
+# - Multiple instances of the same query with different parameters are supported
+# - The "name" field is user-defined for easy identification in logs and API
+# - The "query" field must match a query name in bigquery/queries.go
+# - All parameters (including min_balance) are passed to the BigQuery query
+# - The service will validate that all required parameters for each query are provided

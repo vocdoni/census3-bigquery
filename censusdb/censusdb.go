@@ -11,9 +11,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vocdoni/arbo"
-	"github.com/vocdoni/davinci-node/log"
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/prefixeddb"
+
+	"census3-bigquery/log"
 )
 
 const (
@@ -76,9 +77,10 @@ func NewCensusDB(db db.Database) *CensusDB {
 	go func() {
 		for req := range c.updateRootChan {
 			if err := c.updateRoot(req.censusID, req.newRoot); err != nil {
-				log.Warnw("error updating census root",
-					"id", hex.EncodeToString(req.censusID[:]),
-					"err", err)
+				log.Warn().
+					Str("id", hex.EncodeToString(req.censusID[:])).
+					Err(err).
+					Msg("Error updating census root")
 			}
 			if req.done != nil {
 				close(req.done)
@@ -284,7 +286,10 @@ func (c *CensusDB) Del(censusID uuid.UUID) error {
 
 	go func(id uuid.UUID) {
 		if _, err := deleteCensusTreeFromDatabase(c.db, censusPrefix(id)); err != nil {
-			log.Warnw("error deleting census tree", "id", hex.EncodeToString(id[:]), "err", err)
+			log.Warn().
+				Str("id", hex.EncodeToString(id[:])).
+				Err(err).
+				Msg("Error deleting census tree")
 		}
 	}(censusID)
 
@@ -298,7 +303,10 @@ func deleteCensusTreeFromDatabase(kv db.Database, prefix []byte) (int, error) {
 	count := 0
 	err := database.Iterate(nil, func(k, _ []byte) bool {
 		if err := wtx.Delete(k); err != nil {
-			log.Warnw("could not remove key from database", "key", hex.EncodeToString(k))
+			log.Warn().
+				Str("key", hex.EncodeToString(k)).
+				Err(err).
+				Msg("Could not remove key from database")
 		} else {
 			count++
 		}

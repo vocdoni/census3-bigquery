@@ -35,8 +35,8 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/census3-service .
 
-# Create data directory for snapshots
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+# Create default data directory (will be overridden by CENSUS3_DATA_DIR if set)
+RUN mkdir -p /app/.bigcensus3 && chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser

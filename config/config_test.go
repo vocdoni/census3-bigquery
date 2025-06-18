@@ -2,144 +2,346 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
+// resetFlags resets pflag and viper state between tests
 func resetFlags() {
 	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	viper.Reset()
 }
 
-func setupTestEnv(envVars map[string]string) func() {
-	// Save original environment
-	originalEnv := make(map[string]string)
-	for key := range envVars {
-		originalEnv[key] = os.Getenv(key)
-		_ = os.Unsetenv(key)
-	}
+func TestLoadConfig(t *testing.T) {
+	c := quicktest.New(t)
+	resetFlags()
 
-	// Set test environment
-	for key, value := range envVars {
-		if value != "" {
-			_ = os.Setenv(key, value)
-		}
-	}
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
 
-	// Return cleanup function
-	return func() {
-		for key := range envVars {
-			if val, exists := originalEnv[key]; exists && val != "" {
-				_ = os.Setenv(key, val)
-			} else {
-				_ = os.Unsetenv(key)
-			}
-		}
-	}
+	// Create a test queries.yaml file
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+queries:
+  - name: ethereum_balances_test
+    query: ethereum_balances
+    period: 1h
+    parameters:
+      min_balance: 1.0
+  - name: erc20_holders_test
+    query: erc20_holders
+    period: 30m
+    parameters:
+      token_address: "0x1234567890123456789012345678901234567890"
+      min_balance: 100
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
+
+	// Set environment variables for testing
+	c.Assert(os.Setenv("CENSUS3_PROJECT", "test-project"), quicktest.IsNil)
+	c.Assert(os.Setenv("CENSUS3_API_PORT", "9090"), quicktest.IsNil)
+	c.Assert(os.Setenv("CENSUS3_DATA_DIR", tempDir), quicktest.IsNil)
+	c.Assert(os.Setenv("CENSUS3_BATCH_SIZE", "5000"), quicktest.IsNil)
+	c.Assert(os.Setenv("CENSUS3_QUERIES_FILE", queriesFile), quicktest.IsNil)
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_API_PORT")
+		_ = os.Unsetenv("CENSUS3_DATA_DIR")
+		_ = os.Unsetenv("CENSUS3_BATCH_SIZE")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
+
+	// Load configuration
+	cfg, err := Load()
+	c.Assert(err, quicktest.IsNil)
+	c.Assert(cfg, quicktest.Not(quicktest.IsNil))
+
+	// Verify basic configuration
+	c.Assert(cfg.Project, quicktest.Equals, "test-project")
+	c.Assert(cfg.APIPort, quicktest.Equals, 9090)
+	c.Assert(cfg.DataDir, quicktest.Equals, tempDir)
+	c.Assert(cfg.BatchSize, quicktest.Equals, 5000)
+	c.Assert(cfg.QueriesFile, quicktest.Equals, queriesFile)
+
+	// Verify queries were loaded
+	c.Assert(len(cfg.Queries), quicktest.Equals, 2)
+
+	// Verify first query
+	query1 := cfg.Queries[0]
+	c.Assert(query1.Name, quicktest.Equals, "ethereum_balances_test")
+	c.Assert(query1.Query, quicktest.Equals, "ethereum_balances")
+	c.Assert(query1.Period, quicktest.Equals, time.Hour)
+	c.Assert(query1.Parameters["min_balance"], quicktest.Equals, 1.0)
+
+	// Verify second query
+	query2 := cfg.Queries[1]
+	c.Assert(query2.Name, quicktest.Equals, "erc20_holders_test")
+	c.Assert(query2.Query, quicktest.Equals, "erc20_holders")
+	c.Assert(query2.Period, quicktest.Equals, 30*time.Minute)
+	c.Assert(query2.Parameters["token_address"], quicktest.Equals, "0x1234567890123456789012345678901234567890")
+	c.Assert(query2.Parameters["min_balance"], quicktest.Equals, 100)
 }
 
-func TestConfigLoad(t *testing.T) {
+func TestLoadConfigDefaults(t *testing.T) {
+	c := quicktest.New(t)
 	resetFlags()
 
-	envVars := map[string]string{
-		"CENSUS3_PROJECT":      "",
-		"CENSUS3_PERIOD":       "",
-		"CENSUS3_API_PORT":     "",
-		"CENSUS3_STORAGE_PATH": "",
-		"CENSUS3_MIN_BALANCES": "",
-		"CENSUS3_HOST":         "",
-		"CENSUS3_BATCH_SIZE":   "",
-	}
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
 
-	cleanup := setupTestEnv(envVars)
-	defer cleanup()
+	// Create a minimal test queries.yaml file
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+queries:
+  - name: ethereum_balances_test
+    query: ethereum_balances
+    period: 2h
+    parameters:
+      min_balance: 0.5
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
 
-	// Test with missing required project
-	_, err := Load()
-	if err == nil {
-		t.Error("Expected error for missing project, got nil")
-	}
+	// Set only required environment variables
+	c.Assert(os.Setenv("CENSUS3_PROJECT", "test-project"), quicktest.IsNil)
+	c.Assert(os.Setenv("CENSUS3_QUERIES_FILE", queriesFile), quicktest.IsNil)
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
 
-	// Reset flags and set required project
+	// Load configuration
+	cfg, err := Load()
+	c.Assert(err, quicktest.IsNil)
+	c.Assert(cfg, quicktest.Not(quicktest.IsNil))
+
+	// Verify defaults
+	c.Assert(cfg.Project, quicktest.Equals, "test-project")
+	c.Assert(cfg.APIPort, quicktest.Equals, 8080)
+	c.Assert(cfg.BatchSize, quicktest.Equals, 10000)
+	c.Assert(cfg.QueriesFile, quicktest.Equals, queriesFile)
+
+	// Verify query was loaded
+	c.Assert(len(cfg.Queries), quicktest.Equals, 1)
+	query := cfg.Queries[0]
+	c.Assert(query.Name, quicktest.Equals, "ethereum_balances_test")
+	c.Assert(query.Query, quicktest.Equals, "ethereum_balances")
+	c.Assert(query.Period, quicktest.Equals, 2*time.Hour)
+	c.Assert(query.Parameters["min_balance"], quicktest.Equals, 0.5)
+}
+
+func TestLoadConfigMissingProject(t *testing.T) {
+	c := quicktest.New(t)
 	resetFlags()
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create a test queries.yaml file
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+queries:
+  - name: ethereum_balances_test
+    query: ethereum_balances
+    period: 1h
+    parameters:
+      min_balance: 1.0
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
+
+	// Set queries file but not project
+	_ = os.Setenv("CENSUS3_QUERIES_FILE", queriesFile)
+	defer func() { _ = os.Unsetenv("CENSUS3_QUERIES_FILE") }()
+
+	// Load configuration should fail
+	_, err = Load()
+	c.Assert(err, quicktest.Not(quicktest.IsNil))
+	c.Assert(err.Error(), quicktest.Contains, "project is required")
+}
+
+func TestLoadConfigMissingQueriesFile(t *testing.T) {
+	c := quicktest.New(t)
+	resetFlags()
+
+	// Set project but point to non-existent queries file
 	_ = os.Setenv("CENSUS3_PROJECT", "test-project")
+	_ = os.Setenv("CENSUS3_QUERIES_FILE", "/non/existent/queries.yaml")
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
 
-	// Test with default values
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	// Verify default values
-	if cfg.Project != "test-project" {
-		t.Errorf("Expected project 'test-project', got '%s'", cfg.Project)
-	}
-	if cfg.Period != time.Hour {
-		t.Errorf("Expected period 1h, got %v", cfg.Period)
-	}
-	if cfg.APIPort != 8080 {
-		t.Errorf("Expected API port 8080, got %d", cfg.APIPort)
-	}
-	if cfg.StoragePath != "./snapshots.json" {
-		t.Errorf("Expected storage path './snapshots.json', got '%s'", cfg.StoragePath)
-	}
-	if len(cfg.MinBalances) != 1 || cfg.MinBalances[0] != 0.25 {
-		t.Errorf("Expected min balances [0.25], got %v", cfg.MinBalances)
-	}
-	if cfg.Host != "http://localhost:8080" {
-		t.Errorf("Expected host 'http://localhost:8080', got '%s'", cfg.Host)
-	}
-	if cfg.BatchSize != 5000 {
-		t.Errorf("Expected batch size 5000, got %d", cfg.BatchSize)
-	}
+	// Load configuration should fail
+	_, err := Load()
+	c.Assert(err, quicktest.Not(quicktest.IsNil))
+	c.Assert(err.Error(), quicktest.Contains, "queries file not found")
 }
 
-func TestConfigLoadWithEnvironmentVariables(t *testing.T) {
+func TestLoadConfigInvalidQueriesFile(t *testing.T) {
+	c := quicktest.New(t)
 	resetFlags()
 
-	envVars := map[string]string{
-		"CENSUS3_PROJECT":      "custom-project",
-		"CENSUS3_PERIOD":       "30m",
-		"CENSUS3_API_PORT":     "9090",
-		"CENSUS3_STORAGE_PATH": "/custom/path/snapshots.json",
-		"CENSUS3_MIN_BALANCES": "1.5",
-		"CENSUS3_HOST":         "http://custom-host:8080",
-		"CENSUS3_BATCH_SIZE":   "1000",
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create an invalid queries.yaml file
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+invalid yaml content [
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
+
+	// Set environment variables
+	_ = os.Setenv("CENSUS3_PROJECT", "test-project")
+	_ = os.Setenv("CENSUS3_QUERIES_FILE", queriesFile)
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
+
+	// Load configuration should fail
+	_, err = Load()
+	c.Assert(err, quicktest.Not(quicktest.IsNil))
+	c.Assert(err.Error(), quicktest.Contains, "failed to parse queries file")
+}
+
+func TestLoadConfigEmptyQueries(t *testing.T) {
+	c := quicktest.New(t)
+	resetFlags()
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create an empty queries.yaml file
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+queries: []
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
+
+	// Set environment variables
+	_ = os.Setenv("CENSUS3_PROJECT", "test-project")
+	_ = os.Setenv("CENSUS3_QUERIES_FILE", queriesFile)
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
+
+	// Load configuration should fail
+	_, err = Load()
+	c.Assert(err, quicktest.Not(quicktest.IsNil))
+	c.Assert(err.Error(), quicktest.Contains, "no queries defined")
+}
+
+func TestLoadConfigInvalidQueryPeriod(t *testing.T) {
+	c := quicktest.New(t)
+	resetFlags()
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create a queries.yaml file with invalid period
+	queriesFile := filepath.Join(tempDir, "queries.yaml")
+	queriesContent := `
+queries:
+  - name: ethereum_balances_test
+    query: ethereum_balances
+    period: 0s
+    parameters:
+      min_balance: 1.0
+`
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	c.Assert(err, quicktest.IsNil)
+
+	// Set environment variables
+	_ = os.Setenv("CENSUS3_PROJECT", "test-project")
+	_ = os.Setenv("CENSUS3_QUERIES_FILE", queriesFile)
+	defer func() {
+		_ = os.Unsetenv("CENSUS3_PROJECT")
+		_ = os.Unsetenv("CENSUS3_QUERIES_FILE")
+	}()
+
+	// Load configuration should fail
+	_, err = Load()
+	c.Assert(err, quicktest.Not(quicktest.IsNil))
+	c.Assert(err.Error(), quicktest.Contains, "period must be positive")
+}
+
+func TestQueryConfigGetQueryID(t *testing.T) {
+	c := quicktest.New(t)
+
+	// Test basic query ID generation
+	queryConfig := QueryConfig{
+		Name: "ethereum_balances",
+		Parameters: map[string]interface{}{
+			"min_balance": 1.0,
+		},
 	}
 
-	cleanup := setupTestEnv(envVars)
-	defer cleanup()
+	queryID := queryConfig.GetQueryID()
+	c.Assert(queryID, quicktest.Equals, "ethereum_balances_mb1.00")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Failed to load config with env vars: %v", err)
+	// Test with token address
+	queryConfig2 := QueryConfig{
+		Name: "erc20_holders",
+		Parameters: map[string]interface{}{
+			"min_balance":   100.0,
+			"token_address": "0x1234567890123456789012345678901234567890",
+		},
 	}
 
-	// Verify custom values
-	if cfg.Project != "custom-project" {
-		t.Errorf("Expected project 'custom-project', got '%s'", cfg.Project)
+	queryID2 := queryConfig2.GetQueryID()
+	c.Assert(queryID2, quicktest.Equals, "erc20_holders_mb100.00_token0x1234567890123456789012345678901234567890")
+
+	// Test without parameters
+	queryConfig3 := QueryConfig{
+		Name:       "custom_query",
+		Parameters: map[string]interface{}{},
 	}
-	if cfg.Period != 30*time.Minute {
-		t.Errorf("Expected period 30m, got %v", cfg.Period)
+
+	queryID3 := queryConfig3.GetQueryID()
+	c.Assert(queryID3, quicktest.Equals, "custom_query")
+}
+
+func TestQueryConfigGetMinBalance(t *testing.T) {
+	c := quicktest.New(t)
+
+	// Test with float64
+	queryConfig := QueryConfig{
+		Parameters: map[string]interface{}{
+			"min_balance": 1.5,
+		},
 	}
-	if cfg.APIPort != 9090 {
-		t.Errorf("Expected API port 9090, got %d", cfg.APIPort)
+	c.Assert(queryConfig.GetMinBalance(), quicktest.Equals, 1.5)
+
+	// Test with int
+	queryConfig2 := QueryConfig{
+		Parameters: map[string]interface{}{
+			"min_balance": 2,
+		},
 	}
-	if cfg.StoragePath != "/custom/path/snapshots.json" {
-		t.Errorf("Expected storage path '/custom/path/snapshots.json', got '%s'", cfg.StoragePath)
+	c.Assert(queryConfig2.GetMinBalance(), quicktest.Equals, 2.0)
+
+	// Test with int64
+	queryConfig3 := QueryConfig{
+		Parameters: map[string]interface{}{
+			"min_balance": int64(3),
+		},
 	}
-	// Note: min-balances from environment variables are not supported due to viper limitations
-	// This test should use the default value
-	if len(cfg.MinBalances) != 1 || cfg.MinBalances[0] != 0.25 {
-		t.Errorf("Expected min balances [0.25] (default), got %v", cfg.MinBalances)
+	c.Assert(queryConfig3.GetMinBalance(), quicktest.Equals, 3.0)
+
+	// Test without min_balance
+	queryConfig4 := QueryConfig{
+		Parameters: map[string]interface{}{},
 	}
-	if cfg.Host != "http://custom-host:8080" {
-		t.Errorf("Expected host 'http://custom-host:8080', got '%s'", cfg.Host)
-	}
-	if cfg.BatchSize != 1000 {
-		t.Errorf("Expected batch size 1000, got %d", cfg.BatchSize)
-	}
+	c.Assert(queryConfig4.GetMinBalance(), quicktest.Equals, 0.0)
 }

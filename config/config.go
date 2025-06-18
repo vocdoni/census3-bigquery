@@ -2,71 +2,79 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
+
+// getDefaultDataDir returns the default data directory
+func getDefaultDataDir() string {
+	// Try to use $HOME/.bigcensus3
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		return filepath.Join(homeDir, ".bigcensus3")
+	}
+
+	// Fall back to temp directory
+	return filepath.Join(os.TempDir(), "bigcensus3")
+}
+
+// QueryConfig represents a single query configuration
+type QueryConfig struct {
+	Name       string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
+	Query      string                 `yaml:"query" json:"query"` // BigQuery query name from registry
+	Period     time.Duration          `yaml:"period" json:"period"`
+	Parameters map[string]interface{} `yaml:"parameters" json:"parameters"`
+}
+
+// QueriesFile represents the structure of the queries YAML file
+type QueriesFile struct {
+	Queries []QueryConfig `yaml:"queries" json:"queries"`
+}
 
 // Config holds all configuration for the service
 type Config struct {
 	// Service configuration
-	Period      time.Duration `mapstructure:"period"`
-	APIPort     int           `mapstructure:"api-port"`
-	StoragePath string        `mapstructure:"storage-path"`
+	APIPort int    `mapstructure:"api-port"`
+	DataDir string `mapstructure:"data-dir"`
+	Project string `mapstructure:"project"`
 
-	// BigQuery configuration
-	Project     string    `mapstructure:"project"`
-	MinBalances []float64 `mapstructure:"min-balances"`
-	QueryName   string    `mapstructure:"query-name"`
+	// Query configurations
+	Queries []QueryConfig `mapstructure:"queries"`
 
 	// Census configuration
-	Host      string `mapstructure:"host"`
-	BatchSize int    `mapstructure:"batch-size"`
+	BatchSize int `mapstructure:"batch-size"`
 
-	// GitHub configuration
-	GitHubEnabled      bool   `mapstructure:"github-enabled"`
-	GitHubPAT          string `mapstructure:"github-pat"`
-	GitHubRepo         string `mapstructure:"github-repo"`
-	MaxSnapshotsToKeep int    `mapstructure:"max-snapshots-to-keep"`
-	SkipCSVUpload      bool   `mapstructure:"skip-csv-upload"`
+	// Internal fields
+	QueriesFile string `mapstructure:"queries-file"`
 }
 
-// Load loads configuration from flags and environment variables
+// Load loads configuration from flags, environment variables, and YAML file
 func Load() (*Config, error) {
+	// Get default data directory
+	defaultDataDir := getDefaultDataDir()
+
 	// Define flags
-	pflag.Duration("period", time.Hour, "Sync period (e.g., 1h, 30m)")
 	pflag.Int("api-port", 8080, "API server port")
-	pflag.String("storage-path", "./snapshots.json", "Path to store snapshots")
+	pflag.String("data-dir", defaultDataDir, "Data directory for storage (default: $HOME/.bigcensus3 or temp dir)")
 	pflag.String("project", "", "GCP project ID for BigQuery (required)")
-	pflag.Float64Slice("min-balances", []float64{0.25}, "Minimum ETH balances (can specify multiple)")
-	pflag.String("query-name", "ethereum_balances", "BigQuery query to execute")
-	pflag.String("host", "http://localhost:8080", "Vocdoni node host URL")
-	pflag.Int("batch-size", 5000, "Batch size for census creation")
-	pflag.Bool("github-enabled", false, "Enable GitHub storage mode")
-	pflag.String("github-pat", "", "GitHub Personal Access Token")
-	pflag.String("github-repo", "", "GitHub repository URL")
-	pflag.Int("max-snapshots-to-keep", 5, "Maximum number of snapshots to keep in GitHub repository")
-	pflag.Bool("skip-csv-upload", false, "Skip uploading CSV files to Git repository (metadata only)")
+	pflag.Int("batch-size", 10000, "Batch size for census creation")
+	pflag.String("queries-file", "./queries.yaml", "Path to queries configuration file")
 
 	pflag.Parse()
 
-	// Set default values in viper (excluding min-balances which we handle manually)
-	viper.SetDefault("period", time.Hour)
+	// Set default values in viper
 	viper.SetDefault("api-port", 8080)
-	viper.SetDefault("storage-path", "./snapshots.json")
+	viper.SetDefault("data-dir", defaultDataDir)
 	viper.SetDefault("project", "")
-	viper.SetDefault("query-name", "ethereum_balances")
-	viper.SetDefault("host", "http://localhost:8080")
-	viper.SetDefault("batch-size", 5000)
-	viper.SetDefault("github-enabled", false)
-	viper.SetDefault("github-pat", "")
-	viper.SetDefault("github-repo", "")
-	viper.SetDefault("max-snapshots-to-keep", 5)
-	viper.SetDefault("skip-csv-upload", false)
+	viper.SetDefault("batch-size", 10000)
+	viper.SetDefault("queries-file", "./queries.yaml")
 
-	// Bind flags to viper (excluding min-balances which we handle manually)
-	for _, flag := range []string{"period", "api-port", "storage-path", "project", "query-name", "host", "batch-size", "github-enabled", "github-pat", "github-repo", "max-snapshots-to-keep", "skip-csv-upload"} {
+	// Bind flags to viper
+	for _, flag := range []string{"api-port", "data-dir", "project", "batch-size", "queries-file"} {
 		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
 			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
 		}
@@ -77,31 +85,20 @@ func Load() (*Config, error) {
 	viper.AutomaticEnv()
 
 	// Map environment variables to config keys
-	_ = viper.BindEnv("period", "CENSUS3_PERIOD")
 	_ = viper.BindEnv("api-port", "CENSUS3_API_PORT")
-	_ = viper.BindEnv("storage-path", "CENSUS3_STORAGE_PATH")
+	_ = viper.BindEnv("data-dir", "CENSUS3_DATA_DIR")
 	_ = viper.BindEnv("project", "CENSUS3_PROJECT")
-	_ = viper.BindEnv("min-balances", "CENSUS3_MIN_BALANCES")
-	_ = viper.BindEnv("query-name", "CENSUS3_QUERY_NAME")
-	_ = viper.BindEnv("host", "CENSUS3_HOST")
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
-	_ = viper.BindEnv("github-enabled", "CENSUS3_GITHUB_ENABLED")
-	_ = viper.BindEnv("github-pat", "CENSUS3_GITHUB_PAT")
-	_ = viper.BindEnv("github-repo", "CENSUS3_GITHUB_REPO")
-	_ = viper.BindEnv("max-snapshots-to-keep", "CENSUS3_MAX_SNAPSHOTS_TO_KEEP")
-	_ = viper.BindEnv("skip-csv-upload", "CENSUS3_SKIP_CSV_UPLOAD")
+	_ = viper.BindEnv("queries-file", "CENSUS3_QUERIES_FILE")
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Handle min-balances manually since viper has issues with float64 slices
-	if minBalancesFlag, err := pflag.CommandLine.GetFloat64Slice("min-balances"); err == nil && len(minBalancesFlag) > 0 {
-		cfg.MinBalances = minBalancesFlag
-	} else {
-		// If no flag was provided, use default
-		cfg.MinBalances = []float64{0.25}
+	// Load queries from YAML file
+	if err := cfg.loadQueries(); err != nil {
+		return nil, fmt.Errorf("failed to load queries: %w", err)
 	}
 
 	// Validate required fields
@@ -109,23 +106,104 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("project is required")
 	}
 
-	// Validate GitHub configuration if enabled
-	if cfg.GitHubEnabled {
-		if cfg.GitHubPAT == "" {
-			return nil, fmt.Errorf("github-pat is required when github-enabled is true")
-		}
-		if cfg.GitHubRepo == "" {
-			return nil, fmt.Errorf("github-repo is required when github-enabled is true")
-		}
+	if len(cfg.Queries) == 0 {
+		return nil, fmt.Errorf("at least one query must be configured in %s", cfg.QueriesFile)
 	}
 
 	return &cfg, nil
 }
 
-// GetFirstMinBalance returns the first minimum balance for backward compatibility
-func (c *Config) GetFirstMinBalance() float64 {
-	if len(c.MinBalances) == 0 {
-		return 0.25 // default value
+// loadQueries loads query configurations from the YAML file
+func (c *Config) loadQueries() error {
+	// Check if queries file exists
+	if _, err := os.Stat(c.QueriesFile); os.IsNotExist(err) {
+		return fmt.Errorf("queries file not found: %s (copy from queries.yaml.example)", c.QueriesFile)
 	}
-	return c.MinBalances[0]
+
+	// Read the YAML file
+	data, err := os.ReadFile(c.QueriesFile)
+	if err != nil {
+		return fmt.Errorf("failed to read queries file %s: %w", c.QueriesFile, err)
+	}
+
+	// Parse the YAML
+	var queriesFile QueriesFile
+	if err := yaml.Unmarshal(data, &queriesFile); err != nil {
+		return fmt.Errorf("failed to parse queries file %s: %w", c.QueriesFile, err)
+	}
+
+	// Validate and process queries
+	if len(queriesFile.Queries) == 0 {
+		return fmt.Errorf("no queries defined in %s", c.QueriesFile)
+	}
+
+	for i, query := range queriesFile.Queries {
+		// Validate query name
+		if query.Name == "" {
+			return fmt.Errorf("query %d: name is required", i+1)
+		}
+
+		// Validate query field
+		if query.Query == "" {
+			return fmt.Errorf("query %d (%s): query is required", i+1, query.Name)
+		}
+
+		// Validate period
+		if query.Period <= 0 {
+			return fmt.Errorf("query %d (%s): period must be positive", i+1, query.Name)
+		}
+
+		// Initialize parameters map if nil
+		if query.Parameters == nil {
+			query.Parameters = make(map[string]interface{})
+		}
+
+		// Update the query in the slice
+		queriesFile.Queries[i] = query
+	}
+
+	c.Queries = queriesFile.Queries
+	return nil
+}
+
+// GetQueryID returns a unique identifier for a query configuration
+// This is used to distinguish between different instances of the same query
+func (qc *QueryConfig) GetQueryID() string {
+	// Create a simple hash-like identifier from query name and parameters
+	id := qc.Name
+
+	// Add key parameters to make it unique
+	if minBalance, ok := qc.Parameters["min_balance"]; ok {
+		// Convert to float64 to ensure consistent formatting
+		switch v := minBalance.(type) {
+		case float64:
+			id += fmt.Sprintf("_mb%.2f", v)
+		case int:
+			id += fmt.Sprintf("_mb%.2f", float64(v))
+		case int64:
+			id += fmt.Sprintf("_mb%.2f", float64(v))
+		default:
+			id += fmt.Sprintf("_mb%v", v)
+		}
+	}
+	if tokenAddress, ok := qc.Parameters["token_address"]; ok {
+		id += fmt.Sprintf("_token%s", tokenAddress)
+	}
+
+	return id
+}
+
+// GetMinBalance returns the min_balance parameter as float64, or 0 if not set
+func (qc *QueryConfig) GetMinBalance() float64 {
+	if minBalance, ok := qc.Parameters["min_balance"]; ok {
+		switch v := minBalance.(type) {
+		case float64:
+			return v
+		case int:
+			return float64(v)
+		case int64:
+			return float64(v)
+		}
+	}
+	return 0
 }
