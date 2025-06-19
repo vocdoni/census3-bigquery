@@ -22,12 +22,23 @@ func getDefaultDataDir() string {
 	return filepath.Join(os.TempDir(), "bigcensus3")
 }
 
+// WeightConfig represents weight calculation configuration
+type WeightConfig struct {
+	Strategy        string   `yaml:"strategy" json:"strategy"` // "constant", "proportional_auto", "proportional_manual"
+	ConstantWeight  *int     `yaml:"constant_weight,omitempty" json:"constant_weight,omitempty"`
+	TargetMinWeight *int     `yaml:"target_min_weight,omitempty" json:"target_min_weight,omitempty"`
+	Multiplier      *float64 `yaml:"multiplier,omitempty" json:"multiplier,omitempty"`
+	MaxWeight       *int     `yaml:"max_weight,omitempty" json:"max_weight,omitempty"`
+}
+
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
 	Name       string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
 	Query      string                 `yaml:"query" json:"query"` // BigQuery query name from registry
 	Period     time.Duration          `yaml:"period" json:"period"`
+	Decimals   *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"` // Token decimals (18 for ETH, 6 for USDC, etc.)
 	Parameters map[string]interface{} `yaml:"parameters" json:"parameters"`
+	Weight     *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -158,6 +169,13 @@ func (c *Config) loadQueries() error {
 			query.Parameters = make(map[string]interface{})
 		}
 
+		// Validate weight configuration if provided
+		if query.Weight != nil {
+			if err := query.Weight.Validate(); err != nil {
+				return fmt.Errorf("query %d (%s): invalid weight configuration: %w", i+1, query.Name, err)
+			}
+		}
+
 		// Update the query in the slice
 		queriesFile.Queries[i] = query
 	}
@@ -206,4 +224,68 @@ func (qc *QueryConfig) GetMinBalance() float64 {
 		}
 	}
 	return 0
+}
+
+// GetDecimals returns the token decimals with smart defaults
+func (qc *QueryConfig) GetDecimals() int {
+	if qc.Decimals != nil {
+		return *qc.Decimals
+	}
+
+	// Smart defaults based on query type
+	switch qc.Query {
+	case "ethereum_balances", "ethereum_balances_recent":
+		return 18 // ETH has 18 decimals
+	default:
+		return 18 // Default to 18 decimals for unknown tokens
+	}
+}
+
+// GetWeightConfig returns the weight configuration with defaults
+func (qc *QueryConfig) GetWeightConfig() WeightConfig {
+	if qc.Weight != nil {
+		return *qc.Weight
+	}
+
+	// Default to proportional_manual with multiplier 100 for backwards compatibility
+	multiplier := 100.0
+	return WeightConfig{
+		Strategy:   "proportional_manual",
+		Multiplier: &multiplier,
+	}
+}
+
+// ValidateWeightConfig validates the weight configuration
+func (wc *WeightConfig) Validate() error {
+	switch wc.Strategy {
+	case "constant":
+		if wc.ConstantWeight == nil {
+			return fmt.Errorf("constant_weight is required for constant strategy")
+		}
+		if *wc.ConstantWeight <= 0 {
+			return fmt.Errorf("constant_weight must be positive")
+		}
+	case "proportional_auto":
+		if wc.TargetMinWeight == nil {
+			return fmt.Errorf("target_min_weight is required for proportional_auto strategy")
+		}
+		if *wc.TargetMinWeight <= 0 {
+			return fmt.Errorf("target_min_weight must be positive")
+		}
+	case "proportional_manual":
+		if wc.Multiplier == nil {
+			return fmt.Errorf("multiplier is required for proportional_manual strategy")
+		}
+		if *wc.Multiplier <= 0 {
+			return fmt.Errorf("multiplier must be positive")
+		}
+	default:
+		return fmt.Errorf("invalid weight strategy: %s (must be 'constant', 'proportional_auto', or 'proportional_manual')", wc.Strategy)
+	}
+
+	if wc.MaxWeight != nil && *wc.MaxWeight <= 0 {
+		return fmt.Errorf("max_weight must be positive if specified")
+	}
+
+	return nil
 }

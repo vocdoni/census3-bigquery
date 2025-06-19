@@ -25,33 +25,51 @@ The service uses a YAML configuration file to define multiple queries with indep
    ```yaml
    # queries.yaml
    queries:
-     # Ethereum balance snapshots with different thresholds
-     - name: ethereum_balances_small_holders
+     # Ethereum balance snapshots with different weight strategies
+     - name: ethereum_holders_equal_voting
        query: ethereum_balances
        period: 1h
+       decimals: 18  # ETH has 18 decimals
        parameters:
-         min_balance: 0.1
+         min_balance: 0.01  # 0.01 ETH minimum (human-readable)
+       weight:
+         strategy: "constant"
+         constant_weight: 1  # Everyone gets 1 vote regardless of balance
          
-     - name: ethereum_balances_large_holders
+     - name: ethereum_holders_quadratic
        query: ethereum_balances
        period: 1h
+       decimals: 18
        parameters:
-         min_balance: 10.0
+         min_balance: 0.01  # 0.01 ETH minimum
+       weight:
+         strategy: "proportional_auto"
+         target_min_weight: 1  # 0.01 ETH = 1 point, 1 ETH = 100 points
+         max_weight: 10000     # Cap at 10,000 points to prevent whales
          
-     # ERC20 token holders with independent schedules
-     - name: usdc_holders_1_token
+     # ERC20 token holders with proper decimal handling
+     - name: usdc_holders_proportional
        query: erc20_holders
        period: 30m
+       decimals: 6  # USDC has 6 decimals
        parameters:
          token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
-         min_balance: 1000000  # 1 USDC (6 decimals)
+         min_balance: 100  # 100 USDC (human-readable)
+       weight:
+         strategy: "proportional_auto"
+         target_min_weight: 1  # 100 USDC = 1 point
+         max_weight: 1000      # Cap at 1000 points
          
-     - name: dai_holders_1_token
+     - name: dai_holders_custom
        query: erc20_holders
        period: 2h
+       decimals: 18  # DAI has 18 decimals
        parameters:
          token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
-         min_balance: 1000000000000000000  # 1 DAI (18 decimals)
+         min_balance: 50  # 50 DAI (human-readable)
+       weight:
+         strategy: "proportional_manual"
+         multiplier: 0.1  # 50 DAI = 5 points, 500 DAI = 50 points
    ```
 
 Use `--list-queries` to see all available queries:
@@ -66,7 +84,52 @@ go run ./cmd/service --list-queries
 - **`name`**: User-defined identifier for this query instance (used in logs and API responses)
 - **`query`**: BigQuery query name from the registry (must exist in `bigquery/queries.go`)
 - **`period`**: How often to run this query (e.g., `1h`, `30m`, `2h`)
-- **`parameters`**: Query-specific parameters including `min_balance` and others
+- **`decimals`**: Token decimals for conversion (18 for ETH, 6 for USDC, etc.) - optional with smart defaults
+- **`parameters`**: Query-specific parameters including `min_balance` in human-readable units
+- **`weight`**: Weight calculation configuration for census creation - optional, defaults to proportional_manual with multiplier 100
+
+#### Weight Configuration Strategies
+
+The `weight` field supports three strategies for converting token balances into integer weights suitable for voting:
+
+**1. Constant Weight (Equal Voting)**
+```yaml
+weight:
+  strategy: "constant"
+  constant_weight: 1  # Everyone gets the same weight regardless of balance
+```
+- Use case: Democratic voting where each holder gets equal voting power
+- Perfect for governance scenarios requiring equal representation
+
+**2. Proportional Auto (Quadratic Voting)**
+```yaml
+weight:
+  strategy: "proportional_auto"
+  target_min_weight: 1     # Weight for addresses with min_balance
+  max_weight: 10000        # Optional cap to prevent whale dominance
+```
+- Use case: Quadratic voting with automatic scaling
+- Formula: `weight = (balance / min_balance) * target_min_weight`
+- Example: min_balance=0.01 ETH, target_min_weight=1 → 0.01 ETH=1 point, 1 ETH=100 points
+
+**3. Proportional Manual (Custom Multiplier)**
+```yaml
+weight:
+  strategy: "proportional_manual"
+  multiplier: 10.0         # Custom multiplier for balance
+```
+- Use case: Custom weight calculations
+- Formula: `weight = balance * multiplier`
+- Example: multiplier=10 → 1 ETH=10 points, 10 ETH=100 points
+
+#### Human-Readable Balance Configuration
+
+All `min_balance` values are specified in human-readable units:
+- **ETH**: `min_balance: 0.01` means 0.01 ETH
+- **USDC**: `min_balance: 100` means 100 USDC (with `decimals: 6`)
+- **DAI**: `min_balance: 50` means 50 DAI (with `decimals: 18`)
+
+The system automatically converts between human-readable and raw blockchain values using the `decimals` field.
 
 ## HTTP API
 
@@ -95,8 +158,18 @@ curl "http://localhost:8080/snapshots?page=1&pageSize=10&minBalance=1.0"
       "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
       "participantCount": 150,
       "minBalance": 1.0,
-      "queryName": "ethereum_balances_medium_holders",
+      "queryName": "ethereum_holders_quadratic",
       "queryType": "ethereum_balances",
+      "decimals": 18,
+      "period": "1h",
+      "parameters": {
+        "min_balance": 1.0
+      },
+      "weightConfig": {
+        "strategy": "proportional_auto",
+        "targetMinWeight": 1,
+        "maxWeight": 10000
+      },
       "createdAt": "2025-06-18T00:01:23Z"
     }
   ],

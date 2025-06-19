@@ -33,7 +33,18 @@ func TestKVSnapshotStorage(t *testing.T) {
 
 	// Add snapshots
 	for _, snapshot := range testSnapshots {
-		err := storage.AddSnapshot(snapshot.date, snapshot.root, snapshot.count, snapshot.balance, snapshot.query, snapshot.query)
+		// Create test weight config
+		weightConfig := &WeightConfig{
+			Strategy:   "proportional_manual",
+			Multiplier: func() *float64 { v := 100.0; return &v }(),
+		}
+
+		// Create test parameters
+		parameters := map[string]interface{}{
+			"min_balance": snapshot.balance,
+		}
+
+		err := storage.AddSnapshot(snapshot.date, snapshot.root, snapshot.count, snapshot.balance, snapshot.query, snapshot.query, 18, "1h", parameters, weightConfig)
 		c.Assert(err, quicktest.IsNil)
 	}
 
@@ -156,7 +167,18 @@ func TestKVSnapshotStoragePerformance(t *testing.T) {
 		balance := float64(i%10) * 0.1
 		query := "test_query"
 
-		err := storage.AddSnapshot(snapshotTime, root, i*10, balance, query, query)
+		// Create test weight config
+		weightConfig := &WeightConfig{
+			Strategy:   "proportional_manual",
+			Multiplier: func() *float64 { v := 100.0; return &v }(),
+		}
+
+		// Create test parameters
+		parameters := map[string]interface{}{
+			"min_balance": balance,
+		}
+
+		err := storage.AddSnapshot(snapshotTime, root, i*10, balance, query, query, 18, "1h", parameters, weightConfig)
 		c.Assert(err, quicktest.IsNil)
 	}
 

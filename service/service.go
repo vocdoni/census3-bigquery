@@ -271,10 +271,12 @@ func (qr *QueryRunner) performSync() error {
 		Msg("Streaming data from BigQuery and creating census...")
 
 	bqConfig := bigquery.Config{
-		Project:     qr.service.config.Project,
-		MinBalance:  minBalance, // For backward compatibility with bigquery.Config
-		QueryName:   qr.config.Query,
-		QueryParams: qr.config.Parameters,
+		Project:      qr.service.config.Project,
+		MinBalance:   minBalance, // For backward compatibility with bigquery.Config
+		QueryName:    qr.config.Query,
+		QueryParams:  qr.config.Parameters,
+		Decimals:     qr.config.GetDecimals(),
+		WeightConfig: convertWeightConfig(qr.config.GetWeightConfig()),
 	}
 
 	actualCount, err := qr.streamAndCreateCensus(censusRef, bqConfig)
@@ -297,7 +299,30 @@ func (qr *QueryRunner) performSync() error {
 
 	// Step 4: Store snapshot in KV storage
 	rootHex := types.HexBytes(censusRoot)
-	if err := qr.service.kvStorage.AddSnapshot(snapshotDate, rootHex, actualCount, minBalance, queryID, qr.config.Query); err != nil {
+
+	// Convert weight config to storage format
+	var storageWeightConfig *storage.WeightConfig
+	weightConfig := qr.config.GetWeightConfig()
+	storageWeightConfig = &storage.WeightConfig{
+		Strategy:        weightConfig.Strategy,
+		ConstantWeight:  weightConfig.ConstantWeight,
+		TargetMinWeight: weightConfig.TargetMinWeight,
+		Multiplier:      weightConfig.Multiplier,
+		MaxWeight:       weightConfig.MaxWeight,
+	}
+
+	if err := qr.service.kvStorage.AddSnapshot(
+		snapshotDate,
+		rootHex,
+		actualCount,
+		minBalance,
+		queryID,
+		qr.config.Query,
+		qr.config.GetDecimals(),
+		qr.config.Period.String(),
+		qr.config.Parameters,
+		storageWeightConfig,
+	); err != nil {
 		return fmt.Errorf("failed to store snapshot for query %s: %w", queryID, err)
 	}
 
@@ -407,6 +432,17 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 		case <-qr.ctx.Done():
 			return totalProcessed, fmt.Errorf("context cancelled during census creation")
 		}
+	}
+}
+
+// convertWeightConfig converts config.WeightConfig to bigquery.WeightConfig
+func convertWeightConfig(cfg config.WeightConfig) bigquery.WeightConfig {
+	return bigquery.WeightConfig{
+		Strategy:        cfg.Strategy,
+		ConstantWeight:  cfg.ConstantWeight,
+		TargetMinWeight: cfg.TargetMinWeight,
+		Multiplier:      cfg.Multiplier,
+		MaxWeight:       cfg.MaxWeight,
 	}
 }
 

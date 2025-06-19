@@ -40,10 +40,21 @@ type Client struct {
 
 // Config holds BigQuery configuration
 type Config struct {
-	Project     string
-	MinBalance  float64
-	QueryName   string
-	QueryParams map[string]interface{} // Additional query parameters
+	Project      string
+	MinBalance   float64
+	QueryName    string
+	QueryParams  map[string]interface{} // Additional query parameters
+	Decimals     int                    // Token decimals for conversion
+	WeightConfig WeightConfig           // Weight calculation configuration
+}
+
+// WeightConfig represents weight calculation configuration
+type WeightConfig struct {
+	Strategy        string // "constant", "proportional_auto", "proportional_manual"
+	ConstantWeight  *int
+	TargetMinWeight *int
+	Multiplier      *float64
+	MaxWeight       *int
 }
 
 // NewClient creates a new BigQuery client
@@ -250,14 +261,17 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 			}
 
 			address := common.HexToAddress(r.Address)
-			// Convert balance from wei to integer (multiply by 100 as in original code)
-			balanceETH := weiToETH(r.Balance)
-			balanceFloat, _ := balanceETH.Float64()
-			balanceInt := big.NewInt(int64(balanceFloat * 100))
+
+			// Calculate weight based on configuration
+			weight, err := calculateWeight(r.Balance, cfg)
+			if err != nil {
+				log.Warn().Err(err).Str("address", r.Address).Msg("Failed to calculate weight, skipping")
+				continue
+			}
 
 			participant := Participant{
 				Address: address,
-				Balance: balanceInt,
+				Balance: big.NewInt(weight),
 			}
 
 			select {
@@ -272,6 +286,49 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 			return
 		}
 	}
+}
+
+// calculateWeight calculates the weight for a given balance based on the weight configuration
+func calculateWeight(balance *big.Rat, cfg Config) (int64, error) {
+	// Convert balance from wei to human-readable units using decimals
+	decimalsMultiplier := new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(cfg.Decimals)), nil))
+	humanBalance := new(big.Rat).Quo(balance, decimalsMultiplier)
+	humanBalanceFloat, _ := humanBalance.Float64()
+
+	var weight int64
+
+	switch cfg.WeightConfig.Strategy {
+	case "constant":
+		weight = int64(*cfg.WeightConfig.ConstantWeight)
+
+	case "proportional_auto":
+		// Calculate weight based on target_min_weight
+		// weight = (balance / min_balance) * target_min_weight
+		if cfg.MinBalance <= 0 {
+			return 0, fmt.Errorf("min_balance must be positive for proportional_auto strategy")
+		}
+		ratio := humanBalanceFloat / cfg.MinBalance
+		weight = int64(ratio * float64(*cfg.WeightConfig.TargetMinWeight))
+
+	case "proportional_manual":
+		// Apply manual multiplier
+		weight = int64(humanBalanceFloat * *cfg.WeightConfig.Multiplier)
+
+	default:
+		return 0, fmt.Errorf("unknown weight strategy: %s", cfg.WeightConfig.Strategy)
+	}
+
+	// Apply max weight cap if specified
+	if cfg.WeightConfig.MaxWeight != nil && weight > int64(*cfg.WeightConfig.MaxWeight) {
+		weight = int64(*cfg.WeightConfig.MaxWeight)
+	}
+
+	// Ensure weight is at least 1 (no zero weights)
+	if weight < 1 {
+		weight = 1
+	}
+
+	return weight, nil
 }
 
 // GenerateCSVFileName generates a timestamped CSV filename

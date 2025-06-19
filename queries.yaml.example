@@ -5,63 +5,139 @@
 # - name: User-defined name for this query instance (for identification)
 # - query: BigQuery query name (must exist in bigquery/queries.go)
 # - period: How often to run this query (e.g., 1h, 30m, 2h)
-# - parameters: Query-specific parameters (including min_balance)
+# - decimals: Token decimals (18 for ETH, 6 for USDC, etc.) - optional with smart defaults
+# - parameters: Query-specific parameters (including min_balance in human-readable units)
+# - weight: Weight calculation configuration - optional, defaults to proportional_manual with multiplier 100
 
 queries:
-  # Ethereum balance snapshots with different thresholds
-  - name: ethereum_balances_small_holders
+  # Ethereum balance snapshots with different weight strategies
+  
+  # Example 1: Constant weight (everyone gets the same voting power)
+  - name: ethereum_holders_equal_voting
     query: ethereum_balances
     period: 1h
+    decimals: 18  # ETH has 18 decimals
     parameters:
-      min_balance: 0.1
+      min_balance: 0.01  # 0.01 ETH minimum
+    weight:
+      strategy: "constant"
+      constant_weight: 1  # Everyone gets 1 vote regardless of balance
       
-  - name: ethereum_balances_medium_holders
+  # Example 2: Proportional weight with auto-calculation for quadratic voting
+  - name: ethereum_holders_quadratic
     query: ethereum_balances
     period: 1h
+    decimals: 18
     parameters:
-      min_balance: 1.0
+      min_balance: 0.01  # 0.01 ETH minimum
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1  # 0.01 ETH = 1 point, 1 ETH = 100 points
+      max_weight: 10000     # Cap at 10,000 points to prevent whales
       
-  - name: ethereum_balances_large_holders
+  # Example 3: Manual multiplier for custom weight calculation
+  - name: ethereum_holders_custom_weights
     query: ethereum_balances
-    period: 1h
+    period: 2h
+    decimals: 18
     parameters:
-      min_balance: 10.0
+      min_balance: 1.0  # 1 ETH minimum
+    weight:
+      strategy: "proportional_manual"
+      multiplier: 10  # 1 ETH = 10 points, 10 ETH = 100 points
       
-  # Ethereum addresses with recent activity
+  # Example 4: Recent activity with proportional weights
   - name: ethereum_recent_activity
     query: ethereum_balances_recent
     period: 2h
+    decimals: 18
     parameters:
-      min_balance: 0.5
+      min_balance: 0.5  # 0.5 ETH minimum for recent activity
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 5  # 0.5 ETH = 5 points
       
-  # ERC20 token holders - USDC (6 decimals, so 1000000 = 1 USDC)
-  - name: usdc_holders_1_token
+  # ERC20 token holders with proper decimal handling
+  
+  # Example 5: USDC holders (6 decimals) with constant weight
+  - name: usdc_holders_equal
     query: erc20_holders
     period: 30m
+    decimals: 6  # USDC has 6 decimals
     parameters:
       token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
-      min_balance: 1000000
+      min_balance: 10  # 10 USDC (human-readable)
+    weight:
+      strategy: "constant"
+      constant_weight: 1
       
-  # ERC20 token holders - DAI (18 decimals, so 1e18 = 1 DAI)
-  - name: dai_holders_1_token
+  # Example 6: USDC holders with proportional weights
+  - name: usdc_holders_proportional
+    query: erc20_holders
+    period: 30m
+    decimals: 6
+    parameters:
+      token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
+      min_balance: 100  # 100 USDC minimum
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1  # 100 USDC = 1 point, 1000 USDC = 10 points
+      max_weight: 1000      # Cap at 1000 points
+      
+  # Example 7: DAI holders (18 decimals) with custom multiplier
+  - name: dai_holders_custom
     query: erc20_holders
     period: 2h
+    decimals: 18  # DAI has 18 decimals
     parameters:
       token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
-      min_balance: 1000000000000000000
+      min_balance: 50  # 50 DAI minimum
+    weight:
+      strategy: "proportional_manual"
+      multiplier: 0.1  # 50 DAI = 5 points, 500 DAI = 50 points
       
-  # ERC20 token holders - WETH (18 decimals, so 1e17 = 0.1 WETH)
-  - name: weth_holders_point_1_token
+  # Example 8: WETH holders with quadratic voting setup
+  - name: weth_holders_quadratic
     query: erc20_holders
     period: 4h
+    decimals: 18  # WETH has 18 decimals
     parameters:
       token_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
-      min_balance: 100000000000000000
+      min_balance: 0.1  # 0.1 WETH minimum
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1  # 0.1 WETH = 1 point
+      max_weight: 5000      # Cap for quadratic voting
 
-# Notes:
-# - Each query runs independently with its own schedule
-# - Multiple instances of the same query with different parameters are supported
-# - The "name" field is user-defined for easy identification in logs and API
-# - The "query" field must match a query name in bigquery/queries.go
-# - All parameters (including min_balance) are passed to the BigQuery query
-# - The service will validate that all required parameters for each query are provided
+# Weight Strategy Explanations:
+#
+# 1. "constant": Everyone gets the same weight regardless of balance
+#    - Use for: Simple voting where each holder gets one vote
+#    - Required: constant_weight (integer)
+#    - Example: constant_weight: 1 (everyone gets 1 vote)
+#
+# 2. "proportional_auto": Automatic calculation based on balance ratio
+#    - Use for: Quadratic voting or proportional representation
+#    - Required: target_min_weight (integer)
+#    - Formula: weight = (balance / min_balance) * target_min_weight
+#    - Example: min_balance=0.01, target_min_weight=1 → 0.01 ETH=1 point, 1 ETH=100 points
+#
+# 3. "proportional_manual": Custom multiplier for balance
+#    - Use for: Custom weight calculations
+#    - Required: multiplier (float)
+#    - Formula: weight = balance * multiplier
+#    - Example: multiplier=10 → 1 ETH=10 points, 10 ETH=100 points
+#
+# Optional for all strategies:
+# - max_weight: Cap the maximum weight to prevent extreme values
+#
+# Decimal Handling:
+# - All min_balance values are in human-readable units (1.5 ETH, 100 USDC, etc.)
+# - The decimals field tells the system how to convert to/from raw blockchain values
+# - ETH: 18 decimals (1 ETH = 1e18 wei)
+# - USDC: 6 decimals (1 USDC = 1e6 units)
+# - DAI: 18 decimals (1 DAI = 1e18 units)
+#
+# Smart Defaults:
+# - If decimals is omitted, defaults to 18 for ethereum_balances queries
+# - If weight is omitted, defaults to proportional_manual with multiplier 100 (backwards compatible)
