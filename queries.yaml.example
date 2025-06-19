@@ -1,278 +1,129 @@
 # Census3 BigQuery Queries Configuration
 # Copy this file to queries.yaml and customize your queries
-#
-# Each query configuration supports:
-# - name: User-defined name for this query instance (for identification)
-# - query: BigQuery query name (must exist in bigquery/queries.go)
-# - period: How often to run this query (e.g., 1h, 30m, 2h)
-# - decimals: Token decimals (18 for ETH, 6 for USDC, etc.) - optional with smart defaults
-# - parameters: Query-specific parameters (including min_balance in human-readable units)
-# - weight: Weight calculation configuration - optional, defaults to proportional_manual with multiplier 100
 
 queries:
-  # Ethereum balance snapshots with different weight strategies
-  
-  # Example 1: Constant weight (everyone gets the same voting power)
-  - name: ethereum_holders_equal_voting
+  # Example 1: Simple Ethereum holders with equal voting
+  - name: ethereum_holders_equal
     query: ethereum_balances
     period: 1h
-    disabled: false       # Optional: explicitly enable (default: false)
-    syncOnStart: false    # Optional: respect period timing (default: false)
-    decimals: 18          # ETH has 18 decimals
-    parameters:
-      min_balance: 0.01   # 0.01 ETH minimum (human-readable)
-    weight:
-      strategy: "constant"
-      constant_weight: 1  # Everyone gets 1 vote regardless of balance
-      
-  # Example 2: Proportional weight with auto-calculation for quadratic voting
-  - name: ethereum_holders_quadratic
-    query: ethereum_balances
-    period: 1h
-    syncOnStart: true     # Force immediate sync on startup
-    decimals: 18
-    parameters:
-      min_balance: 0.01   # 0.01 ETH minimum
-    weight:
-      strategy: "proportional_auto"
-      target_min_weight: 1  # 0.01 ETH = 1 point, 1 ETH = 100 points
-      max_weight: 10000     # Cap at 10,000 points to prevent whales
-      
-  # Example 3: Manual multiplier for custom weight calculation
-  - name: ethereum_holders_custom_weights
-    query: ethereum_balances
-    period: 2h
     decimals: 18
     parameters:
       min_balance: 1.0  # 1 ETH minimum
     weight:
-      strategy: "proportional_manual"
-      multiplier: 10  # 1 ETH = 10 points, 10 ETH = 100 points
-      
-  # Example 4: Recent activity with proportional weights
-  - name: ethereum_recent_activity
-    query: ethereum_balances_recent
-    period: 2h
-    decimals: 18
-    parameters:
-      min_balance: 0.5  # 0.5 ETH minimum for recent activity
-    weight:
-      strategy: "proportional_auto"
-      target_min_weight: 5  # 0.5 ETH = 5 points
-      
-  # ERC20 token holders with proper decimal handling
-  
-  # Example 5: USDC holders (6 decimals) with constant weight
-  - name: usdc_holders_equal
-    query: erc20_holders
-    period: 30m
-    decimals: 6  # USDC has 6 decimals
-    parameters:
-      token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
-      min_balance: 10  # 10 USDC (human-readable)
-    weight:
       strategy: "constant"
       constant_weight: 1
-      
-  # Example 6: USDC holders with proportional weights
-  - name: usdc_holders_proportional
-    query: erc20_holders
-    period: 30m
-    decimals: 6
-    parameters:
-      token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
-      min_balance: 100  # 100 USDC minimum
-    weight:
-      strategy: "proportional_auto"
-      target_min_weight: 1  # 100 USDC = 1 point, 1000 USDC = 10 points
-      max_weight: 1000      # Cap at 1000 points
-      
-  # Example 7: DAI holders (18 decimals) with custom multiplier
-  - name: dai_holders_custom
-    query: erc20_holders
-    period: 2h
-    decimals: 18  # DAI has 18 decimals
-    parameters:
-      token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
-      min_balance: 50  # 50 DAI minimum
-    weight:
-      strategy: "proportional_manual"
-      multiplier: 0.1  # 50 DAI = 5 points, 500 DAI = 50 points
-      
-  # Example 8: WETH holders with quadratic voting setup
-  - name: weth_holders_quadratic
-    query: erc20_holders
-    period: 4h
-    decimals: 18  # WETH has 18 decimals
-    parameters:
-      token_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
-      min_balance: 0.1  # 0.1 WETH minimum
-    weight:
-      strategy: "proportional_auto"
-      target_min_weight: 1  # 0.1 WETH = 1 point
-      max_weight: 5000      # Cap for quadratic voting
 
-  # Example 9: Disabled query (keeps existing snapshots accessible)
-  - name: old_ethereum_query
-    query: ethereum_balances
-    period: 6h
-    disabled: true        # Disables sync but keeps snapshots in API
+  # Example 2: ERC20 token holders with cost control
+  - name: justice_token_holders
+    query: erc20_holders
+    period: 50m
+    estimate_first: true
+    cost_preset: "default"  # Simple cost control
     decimals: 18
     parameters:
-      min_balance: 5.0    # 5 ETH minimum
-    weight:
-      strategy: "proportional_manual"
-      multiplier: 50
-
-  # Example 10: Critical query that always syncs immediately on startup
-  - name: critical_governance_census
-    query: ethereum_balances
-    period: 12h
-    syncOnStart: true     # Always runs immediately on service start
-    decimals: 18
-    parameters:
-      min_balance: 0.1    # 0.1 ETH minimum
-    weight:
-      strategy: "proportional_auto"
-      target_min_weight: 10
-      max_weight: 50000
-
-  # Example 11: Query with cost estimation and billing protection
-  - name: ethereum_balances_cost_controlled
-    query: ethereum_balances
-    period: 6h
-    decimals: 18
-    estimate_first: true  # Enable cost estimation before execution
-    cost_thresholds:
-      max_bytes_processed: 107374182400    # 100 GB maximum (in bytes)
-      max_estimated_cost_usd: 5.0          # $5.00 maximum cost
-      warn_threshold_bytes: 10737418240    # 10 GB warning threshold (in bytes)
-    bigquery_pricing:
-      price_per_tb_processed: 6.25         # $6.25 per TB (current BigQuery pricing)
-    parameters:
-      min_balance: 1.0    # 1 ETH minimum
+      token_address: "0x59d1e836f7b7210a978b25a855085cc46fd090b5"
+      min_balance: 20000
     weight:
       strategy: "proportional_auto"
       target_min_weight: 1
 
-  # Example 12: Conservative query with strict cost limits
-  - name: ethereum_balances_budget_friendly
+  # Example 3: Conservative cost limits for development
+  - name: ethereum_test
     query: ethereum_balances
     period: 24h
-    decimals: 18
     estimate_first: true
-    cost_thresholds:
-      max_bytes_processed: 53687091200     # 50 GB maximum
-      max_estimated_cost_usd: 2.0          # $2.00 maximum cost
-      warn_threshold_bytes: 5368709120     # 5 GB warning threshold
+    cost_preset: "conservative"  # 1GB/$0.10 limits
     parameters:
-      min_balance: 5.0    # 5 ETH minimum (smaller result set)
+      min_balance: 10.0
     weight:
       strategy: "constant"
       constant_weight: 1
 
-# Weight Strategy Explanations:
+  # Example 4: High-volume production query
+  - name: ethereum_governance
+    query: ethereum_balances
+    period: 2h
+    estimate_first: true
+    cost_preset: "high_volume"  # 1TB/$50 limits
+    parameters:
+      min_balance: 0.1
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 10
+      max_weight: 100000
+
+  # Example 5: No cost limits (advanced users)
+  - name: ethereum_unlimited
+    query: ethereum_balances
+    period: 6h
+    estimate_first: true
+    cost_preset: "none"  # No cost limits
+    parameters:
+      min_balance: 0.01
+    weight:
+      strategy: "proportional_manual"
+      multiplier: 100
+
+  # Example 6: Disabled query (keeps snapshots accessible)
+  - name: old_query
+    query: ethereum_balances
+    period: 12h
+    disabled: true  # Disabled but snapshots remain accessible
+    parameters:
+      min_balance: 5.0
+    weight:
+      strategy: "constant"
+      constant_weight: 1
+
+# Cost Preset Options:
 #
-# 1. "constant": Everyone gets the same weight regardless of balance
-#    - Use for: Simple voting where each holder gets one vote
-#    - Required: constant_weight (integer)
-#    - Example: constant_weight: 1 (everyone gets 1 vote)
+# "conservative" - Safe for development/testing
+#   - 1 GB processing limit
+#   - $0.10 cost limit
+#   - 100 MB warning threshold
 #
-# 2. "proportional_auto": Automatic calculation based on balance ratio
-#    - Use for: Quadratic voting or proportional representation
-#    - Required: target_min_weight (integer)
-#    - Formula: weight = (balance / min_balance) * target_min_weight
-#    - Example: min_balance=0.01, target_min_weight=1 → 0.01 ETH=1 point, 1 ETH=100 points
+# "default" - Standard production use
+#   - 100 GB processing limit
+#   - $5.00 cost limit
+#   - 10 GB warning threshold
 #
-# 3. "proportional_manual": Custom multiplier for balance
-#    - Use for: Custom weight calculations
-#    - Required: multiplier (float)
-#    - Formula: weight = balance * multiplier
-#    - Example: multiplier=10 → 1 ETH=10 points, 10 ETH=100 points
+# "high_volume" - Enterprise/high-volume use
+#   - 1 TB processing limit
+#   - $50.00 cost limit
+#   - 100 GB warning threshold
 #
-# Optional for all strategies:
-# - max_weight: Cap the maximum weight to prevent extreme values
+# "none" - No cost limits (advanced users only)
+#   - No processing limits
+#   - No cost limits
+#   - Use with caution!
 #
-# Decimal Handling:
-# - All min_balance values are in human-readable units (1.5 ETH, 100 USDC, etc.)
-# - The decimals field tells the system how to convert to/from raw blockchain values
-# - ETH: 18 decimals (1 ETH = 1e18 wei)
-# - USDC: 6 decimals (1 USDC = 1e6 units)
-# - DAI: 18 decimals (1 DAI = 1e18 units)
+# Weight Strategy Options:
 #
-# Smart Defaults:
-# - If decimals is omitted, defaults to 18 for ethereum_balances queries
-# - If weight is omitted, defaults to proportional_manual with multiplier 100 (backwards compatible)
+# "constant" - Everyone gets the same weight
+#   - constant_weight: integer (required)
+#   - Use for: Equal voting power
+#
+# "proportional_auto" - Automatic scaling based on balance ratio
+#   - target_min_weight: integer (required)
+#   - max_weight: integer (optional cap)
+#   - Formula: weight = (balance / min_balance) * target_min_weight
+#   - Use for: Quadratic voting
+#
+# "proportional_manual" - Custom multiplier
+#   - multiplier: float (required)
+#   - max_weight: integer (optional cap)
+#   - Formula: weight = balance * multiplier
+#   - Use for: Custom weight calculations
 #
 # Query Control Options:
 #
-# disabled (boolean, optional, default: false):
-# - Set to true to disable synchronization for this query
-# - Existing snapshots remain accessible via API
-# - Use for temporarily disabling expensive queries or deprecated configurations
-# - Example: disabled: true
+# disabled: true/false (optional, default: false)
+#   - Disables sync but keeps existing snapshots accessible
 #
-# syncOnStart (boolean, optional, default: false):
-# - Controls whether sync runs immediately on service startup
-# - If false (default): Respects period timing - only syncs if enough time has passed since last snapshot
-# - If true: Always runs sync immediately on startup, regardless of last snapshot time
-# - Use true for critical queries that must be up-to-date on restart
-# - Example: syncOnStart: true
+# syncOnStart: true/false (optional, default: false)
+#   - If true: Always syncs immediately on startup
+#   - If false: Respects period timing
 #
-# Configuration Synchronization:
-# - At startup, the service compares YAML configurations with stored snapshots
-# - Changes in period, decimals, parameters, or weight config are logged
-# - This helps track configuration drift and ensures transparency
-# - Disabled queries are skipped during synchronization
-#
-# BigQuery Cost Estimation and Billing Protection:
-#
-# estimate_first (boolean, optional, default: false):
-# - Enable cost estimation before query execution using BigQuery dry runs
-# - Provides detailed logging of bytes processed and estimated costs
-# - Dry runs are free and fast (typically 1-3 seconds)
-# - Example: estimate_first: true
-#
-# cost_thresholds (object, optional, default: no limits):
-# - Configure automatic cost and size limits for query protection
-# - All fields are optional - omit to disable that specific limit
-# - Available thresholds:
-#   - max_bytes_processed: Maximum bytes the query can process (in bytes)
-#   - max_estimated_cost_usd: Maximum estimated cost in USD
-#   - warn_threshold_bytes: Log warning if query exceeds this size (in bytes)
-# - Query execution is rejected if max limits are exceeded
-# - Example:
-#   cost_thresholds:
-#     max_bytes_processed: 107374182400    # 100 GB
-#     max_estimated_cost_usd: 5.0          # $5.00
-#     warn_threshold_bytes: 10737418240    # 10 GB
-#
-# bigquery_pricing (object, optional, default: $6.25/TB):
-# - Configure custom BigQuery pricing for cost estimation
-# - Defaults to current BigQuery on-demand pricing if omitted
-# - Available fields:
-#   - price_per_tb_processed: Price per terabyte processed in USD
-# - Example:
-#   bigquery_pricing:
-#     price_per_tb_processed: 6.25  # $6.25 per TB
-#
-# Cost Estimation Benefits:
-# - Prevent accidentally expensive queries from running
-# - Get detailed cost logging for billing analysis and optimization
-# - Set automatic cost limits for budget protection
-# - Zero overhead when disabled (fully backward compatible)
-# - Fast estimation using BigQuery's free dry run feature
-#
-# Common Byte Size Values:
-# - 1 GB = 1,073,741,824 bytes
-# - 10 GB = 10,737,418,240 bytes
-# - 50 GB = 53,687,091,200 bytes
-# - 100 GB = 107,374,182,400 bytes
-# - 500 GB = 536,870,912,000 bytes
-# - 1 TB = 1,099,511,627,776 bytes
-#
-# Cost Estimation Example Log Output:
-# INFO Estimating query cost before execution query_name=ethereum_balances
-# INFO Query cost estimation completed bytes_processed=85899345920 bytes_formatted="80.0 GB" estimated_cost_usd=0.5000 is_valid=true query_name=ethereum_balances
-# WARN Query will process large amount of data bytes_processed=85899345920 bytes_formatted="80.0 GB" estimated_cost_usd=0.5000
-# INFO Executing query query_name=ethereum_balances
+# estimate_first: true/false (optional, default: false)
+#   - Enables cost estimation before query execution
+#   - Recommended for all production queries

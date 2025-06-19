@@ -33,11 +33,14 @@ type QueryEstimate struct {
 	QuerySQL         string  `json:"query_sql,omitempty"`
 }
 
-// CostThresholds defines limits for query execution
+// CostThresholds defines limits for query execution (internal use)
 type CostThresholds struct {
-	MaxBytesProcessed   *int64   `json:"max_bytes_processed,omitempty"`
-	MaxEstimatedCostUSD *float64 `json:"max_estimated_cost_usd,omitempty"`
-	WarnThresholdBytes  *int64   `json:"warn_threshold_bytes,omitempty"`
+	MaxBytesProcessed   *int64            `json:"max_bytes_processed,omitempty"`
+	MaxEstimatedCostUSD *float64          `json:"max_estimated_cost_usd,omitempty"`
+	WarnThresholdBytes  *int64            `json:"warn_threshold_bytes,omitempty"`
+	MaxBytesBilled      *int64            `json:"max_bytes_billed,omitempty"` // BigQuery job-level safety limit
+	UseResultCache      *bool             `json:"use_result_cache,omitempty"` // Enable/disable result caching
+	JobLabels           map[string]string `json:"job_labels,omitempty"`       // Labels for job tracking
 }
 
 // BigQueryPricing holds pricing information for cost estimation
@@ -59,8 +62,8 @@ type Config struct {
 	Decimals        int                    // Token decimals for conversion
 	WeightConfig    WeightConfig           // Weight calculation configuration
 	EstimateFirst   bool                   // Whether to estimate query cost before execution
-	CostThresholds  CostThresholds         // Cost limits for query execution
-	BigQueryPricing *BigQueryPricing       // Pricing information for cost estimation
+	CostPreset      string                 // Simple cost preset: "conservative", "default", "high_volume", "none"
+	BigQueryPricing *BigQueryPricing       // Pricing information for cost estimation (internal use)
 }
 
 // WeightConfig represents weight calculation configuration
@@ -140,6 +143,9 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		})
 	}
 
+	// Resolve cost thresholds from simple preset
+	resolvedThresholds := ResolveCostPreset(cfg.CostPreset)
+
 	// Estimate query cost if requested
 	if cfg.EstimateFirst {
 		log.Info().Str("query_name", cfg.QueryName).Msg("Estimating streaming query cost before execution")
@@ -165,8 +171,8 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 			return
 		}
 
-		// Check cost thresholds
-		if err := c.checkCostThresholds(estimate, cfg.CostThresholds); err != nil {
+		// Check cost thresholds using resolved thresholds
+		if err := c.checkCostThresholds(estimate, resolvedThresholds); err != nil {
 			errorCh <- err
 			return
 		}
@@ -174,9 +180,37 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 
 	log.Info().Str("query_name", cfg.QueryName).Interface("parameters", queryParams).Msg("Executing streaming query")
 
-	// Execute query
+	// Execute query with enhanced cost controls
 	q := c.client.Query(sql)
 	q.Parameters = bqParams
+
+	// Apply cost control settings from resolved thresholds
+	if resolvedThresholds.MaxBytesBilled != nil {
+		q.MaxBytesBilled = *resolvedThresholds.MaxBytesBilled
+	}
+
+	// Set result cache preference (default to true for cost savings)
+	if resolvedThresholds.UseResultCache != nil && !*resolvedThresholds.UseResultCache {
+		q.DisableQueryCache = true
+	}
+
+	// Add job labels for tracking and cost attribution
+	jobLabels := make(map[string]string)
+	if resolvedThresholds.JobLabels != nil {
+		for k, v := range resolvedThresholds.JobLabels {
+			jobLabels[k] = v
+		}
+	}
+
+	// Add default labels for cost tracking
+	jobLabels["query_type"] = cfg.QueryName
+	jobLabels["cost_optimized"] = "true"
+	jobLabels["created_by"] = "census3-bigquery"
+	q.Labels = jobLabels
+
+	// Location must match dataset location (US for public datasets)
+	q.Location = "US"
+
 	it, err := q.Read(ctx)
 	if err != nil {
 		errorCh <- fmt.Errorf("failed to execute query '%s': %w", cfg.QueryName, err)
@@ -407,4 +441,124 @@ func Float64Ptr(v float64) *float64 {
 func GenerateCSVFileName() string {
 	timestamp := time.Now().Format("20060102_150405")
 	return fmt.Sprintf("addresses_%s.csv", timestamp)
+}
+
+// NewDefaultCostThresholds returns cost thresholds optimized for typical usage
+func NewDefaultCostThresholds() CostThresholds {
+	return CostThresholds{
+		MaxBytesProcessed:   Int64Ptr(100 * 1024 * 1024 * 1024), // 100 GB limit
+		MaxEstimatedCostUSD: Float64Ptr(5.0),                    // $5 USD limit
+		WarnThresholdBytes:  Int64Ptr(10 * 1024 * 1024 * 1024),  // Warn at 10 GB
+		MaxBytesBilled:      Int64Ptr(200 * 1024 * 1024 * 1024), // Hard limit at 200 GB
+		UseResultCache:      BoolPtr(true),                      // Enable caching for cost savings
+		JobLabels: map[string]string{
+			"environment": "production",
+			"cost_tier":   "standard",
+		},
+	}
+}
+
+// NewConservativeCostThresholds returns very strict cost thresholds for development/testing
+func NewConservativeCostThresholds() CostThresholds {
+	return CostThresholds{
+		MaxBytesProcessed:   Int64Ptr(1 * 1024 * 1024 * 1024), // 1 GB limit
+		MaxEstimatedCostUSD: Float64Ptr(0.10),                 // $0.10 USD limit
+		WarnThresholdBytes:  Int64Ptr(100 * 1024 * 1024),      // Warn at 100 MB
+		MaxBytesBilled:      Int64Ptr(2 * 1024 * 1024 * 1024), // Hard limit at 2 GB
+		UseResultCache:      BoolPtr(true),                    // Enable caching
+		JobLabels: map[string]string{
+			"environment": "development",
+			"cost_tier":   "conservative",
+		},
+	}
+}
+
+// NewHighVolumeCostThresholds returns cost thresholds for high-volume production usage
+func NewHighVolumeCostThresholds() CostThresholds {
+	return CostThresholds{
+		MaxBytesProcessed:   Int64Ptr(1024 * 1024 * 1024 * 1024),     // 1 TB limit
+		MaxEstimatedCostUSD: Float64Ptr(50.0),                        // $50 USD limit
+		WarnThresholdBytes:  Int64Ptr(100 * 1024 * 1024 * 1024),      // Warn at 100 GB
+		MaxBytesBilled:      Int64Ptr(2 * 1024 * 1024 * 1024 * 1024), // Hard limit at 2 TB
+		UseResultCache:      BoolPtr(true),                           // Enable caching
+		JobLabels: map[string]string{
+			"environment": "production",
+			"cost_tier":   "high_volume",
+		},
+	}
+}
+
+// NewOptimizedConfig returns a Config with cost optimization defaults enabled
+func NewOptimizedConfig(project, queryName string, minBalance float64) Config {
+	return Config{
+		Project:         project,
+		MinBalance:      minBalance,
+		QueryName:       queryName,
+		QueryParams:     make(map[string]interface{}),
+		Decimals:        18, // Default for ETH
+		WeightConfig:    WeightConfig{Strategy: "constant", ConstantWeight: IntPtr(1)},
+		EstimateFirst:   true, // Always estimate first for cost control
+		CostPreset:      "default",
+		BigQueryPricing: getDefaultPricing(),
+	}
+}
+
+// BoolPtr returns a pointer to a bool value (utility function)
+func BoolPtr(v bool) *bool {
+	return &v
+}
+
+// IntPtr returns a pointer to an int value (utility function)
+func IntPtr(v int) *int {
+	return &v
+}
+
+// GetMonthlyFreeTierRemaining estimates remaining free tier capacity (1TB per month)
+func GetMonthlyFreeTierRemaining(bytesUsedThisMonth int64) int64 {
+	freeTierBytes := int64(1024 * 1024 * 1024 * 1024) // 1 TB in bytes
+	remaining := freeTierBytes - bytesUsedThisMonth
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// EstimateMonthlyCost calculates estimated monthly cost based on usage patterns
+func EstimateMonthlyCost(avgDailyBytes int64, pricing *BigQueryPricing) float64 {
+	if pricing == nil {
+		pricing = getDefaultPricing()
+	}
+
+	monthlyBytes := avgDailyBytes * 30
+	freeTierBytes := int64(1024 * 1024 * 1024 * 1024) // 1 TB free tier
+
+	billableBytes := monthlyBytes - freeTierBytes
+	if billableBytes <= 0 {
+		return 0.0 // Within free tier
+	}
+
+	return calculateEstimatedCost(billableBytes, pricing)
+}
+
+// ResolveCostPreset resolves a simple cost preset string to full cost thresholds
+func ResolveCostPreset(preset string) CostThresholds {
+	switch preset {
+	case "conservative":
+		return NewConservativeCostThresholds()
+	case "default", "standard", "":
+		return NewDefaultCostThresholds()
+	case "high_volume", "enterprise":
+		return NewHighVolumeCostThresholds()
+	case "none":
+		// No cost limits
+		return CostThresholds{
+			UseResultCache: BoolPtr(true), // Still enable caching for performance
+			JobLabels: map[string]string{
+				"cost_tier": "unlimited",
+			},
+		}
+	default:
+		// Unknown preset, use default
+		return NewDefaultCostThresholds()
+	}
 }

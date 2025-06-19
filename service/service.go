@@ -337,7 +337,7 @@ func (qr *QueryRunner) performSync() error {
 		Decimals:        qr.config.GetDecimals(),
 		WeightConfig:    convertWeightConfig(qr.config.GetWeightConfig()),
 		EstimateFirst:   qr.config.GetEstimateFirst(),
-		CostThresholds:  convertCostThresholds(qr.config.GetCostThresholds()),
+		CostPreset:      qr.config.GetCostPreset(),
 		BigQueryPricing: convertBigQueryPricing(qr.config.GetBigQueryPricing()),
 	}
 
@@ -630,15 +630,6 @@ func convertWeightConfig(cfg config.WeightConfig) bigquery.WeightConfig {
 		TargetMinWeight: cfg.TargetMinWeight,
 		Multiplier:      cfg.Multiplier,
 		MaxWeight:       cfg.MaxWeight,
-	}
-}
-
-// convertCostThresholds converts config.CostThresholds to bigquery.CostThresholds
-func convertCostThresholds(cfg config.CostThresholds) bigquery.CostThresholds {
-	return bigquery.CostThresholds{
-		MaxBytesProcessed:   cfg.MaxBytesProcessed,
-		MaxEstimatedCostUSD: cfg.MaxEstimatedCostUSD,
-		WarnThresholdBytes:  cfg.WarnThresholdBytes,
 	}
 }
 

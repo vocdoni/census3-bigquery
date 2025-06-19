@@ -133,46 +133,29 @@ All `min_balance` values are specified in human-readable units:
 
 The system automatically converts between human-readable and raw blockchain values using the `decimals` field.
 
-#### BigQuery Cost Estimation and Billing Protection
+#### Cost Control
 
-The service includes built-in cost estimation and billing protection features to prevent accidentally expensive BigQuery queries:
+Add simple cost protection to prevent expensive queries:
 
 ```yaml
 queries:
-  - name: ethereum_balances_cost_controlled
+  - name: my_query
     query: ethereum_balances
     period: 6h
-    decimals: 18
-    estimate_first: true  # Enable cost estimation before execution
-    cost_thresholds:
-      max_bytes_processed: 107374182400    # 100 GB maximum (in bytes)
-      max_estimated_cost_usd: 5.0          # $5.00 maximum cost
-      warn_threshold_bytes: 10737418240    # 10 GB warning threshold (in bytes)
-    bigquery_pricing:
-      price_per_tb_processed: 6.25         # $6.25 per TB (current BigQuery pricing)
+    estimate_first: true      # Enable cost estimation
+    cost_preset: "default"   # Use default limits
     parameters:
       min_balance: 1.0
     weight:
-      strategy: "proportional_auto"
-      target_min_weight: 1
+      strategy: "constant"
+      constant_weight: 1
 ```
 
-**Cost Estimation Features:**
-
-- **`estimate_first`**: Enable cost estimation using BigQuery dry runs (default: false)
-  - Provides detailed logging of bytes processed and estimated costs
-  - Dry runs are free and fast (typically 1-3 seconds)
-  - Validates query syntax before execution
-
-- **`cost_thresholds`**: Configure automatic cost and size limits (optional)
-  - `max_bytes_processed`: Maximum bytes the query can process (in bytes)
-  - `max_estimated_cost_usd`: Maximum estimated cost in USD
-  - `warn_threshold_bytes`: Log warning if query exceeds this size (in bytes)
-  - Query execution is rejected if max limits are exceeded
-
-- **`bigquery_pricing`**: Custom BigQuery pricing configuration (optional)
-  - `price_per_tb_processed`: Price per terabyte processed in USD
-  - Defaults to $5/TB (current BigQuery on-demand pricing)
+**Cost Presets:**
+- `"conservative"` - 1GB/$0.10 limits
+- `"default"` - 100GB/$5.00 limits   
+- `"high_volume"` - 1TB/$50.00 limits 
+- `"none"` - No limits
 
 ## HTTP API
 

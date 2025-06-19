@@ -18,7 +18,7 @@ var QueryRegistry = map[string]Query{
 	"ethereum_balances": {
 		Name:        "ethereum_balances",
 		Description: "Fetch Ethereum addresses with balance above minimum threshold",
-		SQL: `
+		SQL: `			
 			SELECT address, eth_balance
 			FROM ` + "`bigquery-public-data.crypto_ethereum.balances`" + `
 			WHERE eth_balance >= @min_balance
@@ -29,12 +29,25 @@ var QueryRegistry = map[string]Query{
 		Name:        "ethereum_balances_recent",
 		Description: "Fetch Ethereum addresses with recent activity and balance above threshold",
 		SQL: `
-			SELECT DISTINCT b.address, b.eth_balance
+			-- Cost-optimized query with partition pruning on transactions table only
+			DECLARE snap_date DATE DEFAULT CURRENT_DATE();
+			DECLARE lookback_date DATE DEFAULT DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY);
+			
+			WITH recent_active_addresses AS (
+				SELECT DISTINCT 
+					CASE 
+						WHEN from_address IS NOT NULL THEN from_address
+						WHEN to_address IS NOT NULL THEN to_address
+					END AS address
+				FROM ` + "`bigquery-public-data.crypto_ethereum.transactions`" + `
+				WHERE DATE(block_timestamp) >= lookback_date
+				  AND DATE(block_timestamp) <= snap_date
+				  AND (from_address IS NOT NULL OR to_address IS NOT NULL)
+			)
+			SELECT b.address, b.eth_balance
 			FROM ` + "`bigquery-public-data.crypto_ethereum.balances`" + ` b
-			JOIN ` + "`bigquery-public-data.crypto_ethereum.transactions`" + ` t
-			ON (b.address = t.from_address OR b.address = t.to_address)
+			INNER JOIN recent_active_addresses r ON b.address = r.address
 			WHERE b.eth_balance >= @min_balance
-			AND t.block_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
 			ORDER BY b.eth_balance DESC`,
 		Parameters: []string{"min_balance"},
 	},
@@ -42,13 +55,39 @@ var QueryRegistry = map[string]Query{
 		Name:        "erc20_holders",
 		Description: "Fetch ERC20 token holders above minimum balance threshold",
 		SQL: `
-			SELECT to_address as address, SUM(CAST(value AS NUMERIC)) as eth_balance
-			FROM ` + "`bigquery-public-data.crypto_ethereum.token_transfers`" + `
-			WHERE token_address = @token_address
-			AND to_address IS NOT NULL
-			GROUP BY to_address
-			HAVING SUM(CAST(value AS NUMERIC)) >= @min_balance
-			ORDER BY SUM(CAST(value AS NUMERIC)) DESC`,
+			-- 1. Fetch the contract's creation (genesis) block once
+			DECLARE genesis_block_number INT64 DEFAULT (
+				SELECT MIN(block_number)
+				FROM ` + "`bigquery-public-data.crypto_ethereum.contracts`" + `
+				WHERE address = LOWER(@token_address)  -- contracts table stores mixed-case; LOWER() is harmless
+			);
+			
+			-- 2. Aggregate inbound transfers from that block forward 
+			WITH token_aggregates AS (
+				SELECT
+					to_address AS address,
+					SUM(SAFE_CAST(quantity AS NUMERIC)) AS token_balance
+				FROM
+					` + "`bigquery-public-data.goog_blockchain_ethereum_mainnet_us.token_transfers`" + `
+				WHERE
+					address = LOWER(@token_address)  -- token column is called "address"; dataset stores it in lowercase
+					AND to_address IS NOT NULL
+					AND block_number >= genesis_block_number
+				GROUP BY
+					to_address
+			)
+			
+			-- 3. Return holders ≥ threshold
+			SELECT
+				address,
+				token_balance AS eth_balance  -- keep original aliasing for compatibility
+			FROM
+				token_aggregates
+			WHERE
+				token_balance >= @min_balance
+				AND token_balance IS NOT NULL
+			ORDER BY
+				token_balance DESC`,
 		Parameters: []string{"token_address", "min_balance"},
 	},
 }
