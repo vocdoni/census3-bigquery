@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vocdoni/arbo"
 	"github.com/vocdoni/davinci-node/types"
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/metadb"
@@ -382,7 +383,8 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 			}
 
 			// Hash the address key for the census
-			addressKey := qr.service.censusDB.HashAndTrunkKey(participant.Address.Bytes())
+			addressKey := participant.Address.Bytes()
+
 			if addressKey == nil {
 				log.Warn().
 					Str("address", participant.Address.Hex()).
@@ -391,10 +393,19 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 				continue
 			}
 
+			if len(addressKey) > types.CensusKeyMaxLen {
+				log.Warn().
+					Str("address", participant.Address.Hex()).
+					Str("query", queryID).
+					Msg("Address key length exceeded, skipping")
+				continue
+			}
+
 			// Convert balance to bytes
-			balanceBytes := participant.Balance.Bytes()
+			balanceBytes := arbo.BigIntToBytes(censusRef.Tree().HashFunction().Len(), participant.Balance)
 
 			// Add to current batch
+			log.Info().Msgf("Processing participant %s with balance %s for query %s", participant.Address.Hex(), participant.Balance.String(), queryID)
 			batch = append(batch, addressKey)
 			values = append(values, balanceBytes)
 
