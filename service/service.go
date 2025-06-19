@@ -464,7 +464,6 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 			balanceBytes := arbo.BigIntToBytes(censusRef.Tree().HashFunction().Len(), participant.Balance)
 
 			// Add to current batch
-			log.Info().Msgf("Processing participant %s with balance %s for query %s", participant.Address.Hex(), participant.Balance.String(), queryID)
 			batch = append(batch, addressKey)
 			values = append(values, balanceBytes)
 
