@@ -92,8 +92,6 @@ func New(cfg *config.Config) (*Service, error) {
 	// Initialize API server with KV storage and censusDB
 	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort)
 
-	log.Info().Msg("Using KV storage with shared Pebble database")
-
 	service := &Service{
 		config:         cfg,
 		kvStorage:      kvStorage,
@@ -153,9 +151,8 @@ func (s *Service) Start() error {
 	for i, queryConfig := range s.config.Queries {
 		log.Info().
 			Int("query_index", i+1).
-			Str("query_name", queryConfig.Name).
-			Str("query_id", queryConfig.GetQueryID()).
-			Dur("period", queryConfig.Period).
+			Str("query", queryConfig.Name).
+			Str("period", queryConfig.Period.String()).
 			Float64("min_balance", queryConfig.GetMinBalance()).
 			Interface("parameters", queryConfig.Parameters).
 			Msg("Query configuration loaded")
@@ -177,8 +174,7 @@ func (s *Service) Start() error {
 			defer s.wg.Done()
 			log.Info().
 				Int("query_index", index+1).
-				Str("query_name", qr.config.Name).
-				Str("query_id", qr.config.GetQueryID()).
+				Str("query", qr.config.Name).
 				Msg("Starting query runner")
 			qr.run()
 		}(i, runner)
@@ -205,19 +201,17 @@ func (s *Service) Stop() {
 
 // run executes the query runner's periodic sync process
 func (qr *QueryRunner) run() {
-	queryID := qr.config.GetQueryID()
+	queryID := qr.config.Name
 
 	// Run initial sync immediately
 	log.Info().
-		Str("query_id", queryID).
-		Str("query_name", qr.config.Name).
+		Str("query", queryID).
 		Msg("Running initial sync")
 
 	if err := qr.performSync(); err != nil {
 		log.Error().
 			Err(err).
-			Str("query_id", queryID).
-			Str("query_name", qr.config.Name).
+			Str("query", queryID).
 			Msg("Initial sync failed")
 	}
 
@@ -229,21 +223,18 @@ func (qr *QueryRunner) run() {
 		select {
 		case <-qr.ctx.Done():
 			log.Info().
-				Str("query_id", queryID).
-				Str("query_name", qr.config.Name).
+				Str("query", queryID).
 				Msg("Query runner stopped")
 			return
 		case <-ticker.C:
 			log.Info().
-				Str("query_id", queryID).
-				Str("query_name", qr.config.Name).
+				Str("query", queryID).
 				Msg("Running periodic sync")
 
 			if err := qr.performSync(); err != nil {
 				log.Error().
 					Err(err).
-					Str("query_id", queryID).
-					Str("query_name", qr.config.Name).
+					Str("query", queryID).
 					Msg("Periodic sync failed")
 			}
 		}
@@ -253,13 +244,12 @@ func (qr *QueryRunner) run() {
 // performSync performs a single synchronization cycle for this query
 func (qr *QueryRunner) performSync() error {
 	snapshotDate := time.Now().Truncate(time.Minute)
-	queryID := qr.config.GetQueryID()
+	queryID := qr.config.Name
 	minBalance := qr.config.GetMinBalance()
 
 	log.Info().
 		Time("snapshot_date", snapshotDate).
-		Str("query_id", queryID).
-		Str("query_name", qr.config.Name).
+		Str("query", queryID).
 		Float64("min_balance", minBalance).
 		Msg("Starting sync")
 
@@ -267,7 +257,7 @@ func (qr *QueryRunner) performSync() error {
 	censusID := uuid.New()
 	log.Info().
 		Str("census_id", censusID.String()).
-		Str("query_id", queryID).
+		Str("query", queryID).
 		Msg("Creating new census")
 
 	censusRef, err := qr.service.censusDB.New(censusID)
@@ -277,7 +267,7 @@ func (qr *QueryRunner) performSync() error {
 
 	// Step 2: Stream data from BigQuery and create census
 	log.Info().
-		Str("query_id", queryID).
+		Str("query", queryID).
 		Msg("Streaming data from BigQuery and creating census...")
 
 	bqConfig := bigquery.Config{
@@ -301,7 +291,7 @@ func (qr *QueryRunner) performSync() error {
 	log.Info().
 		Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
 		Int("processed_count", actualCount).
-		Str("query_id", queryID).
+		Str("query", queryID).
 		Float64("min_balance", minBalance).
 		Msg("Census created successfully")
 
@@ -340,7 +330,7 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 	var values [][]byte
 	startTime := time.Now()
 	lastLogTime := startTime
-	queryID := qr.config.GetQueryID()
+	queryID := qr.config.Name
 
 	for {
 		select {
@@ -358,9 +348,9 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 				rate := float64(totalProcessed) / elapsed.Seconds()
 				log.Info().
 					Int("total_processed", totalProcessed).
-					Dur("elapsed", elapsed).
-					Float64("rate_per_sec", rate).
-					Str("query_id", queryID).
+					Str("elapsed", elapsed.String()).
+					Float64("addr_per_sec", rate).
+					Str("query", queryID).
 					Msg("Census creation completed")
 
 				return totalProcessed, nil
@@ -371,7 +361,7 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 			if addressKey == nil {
 				log.Warn().
 					Str("address", participant.Address.Hex()).
-					Str("query_id", queryID).
+					Str("query", queryID).
 					Msg("Failed to hash address key, skipping")
 				continue
 			}
@@ -397,10 +387,9 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 					rate := float64(totalProcessed) / elapsed.Seconds()
 					log.Info().
 						Int("processed", totalProcessed).
-						Int("batch_size", len(batch)).
-						Dur("elapsed", elapsed).
-						Float64("rate_per_sec", rate).
-						Str("query_id", queryID).
+						Str("elapsed", elapsed.String()).
+						Float64("addr_per_sec", rate).
+						Str("query", queryID).
 						Msg("Census creation progress")
 					lastLogTime = currentTime
 				}
