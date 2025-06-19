@@ -103,8 +103,20 @@ func New(cfg *config.Config) (*Service, error) {
 		cancel:         cancel,
 	}
 
-	// Create query runners for each query configuration
+	// Synchronize queries with storage at startup
+	if err := service.synchronizeQueries(); err != nil {
+		log.Warn().Err(err).Msg("Failed to synchronize queries with storage")
+	}
+
+	// Create query runners for each enabled query configuration
 	for i, queryConfig := range cfg.Queries {
+		if queryConfig.IsDisabled() {
+			log.Info().
+				Str("query", queryConfig.Name).
+				Msg("Query is disabled, skipping runner creation but keeping snapshots accessible")
+			continue
+		}
+
 		runner, err := service.createQueryRunner(&queryConfig)
 		if err != nil {
 			cancel()
@@ -204,16 +216,23 @@ func (s *Service) Stop() {
 func (qr *QueryRunner) run() {
 	queryID := qr.config.Name
 
-	// Run initial sync immediately
-	log.Info().
-		Str("query", queryID).
-		Msg("Running initial sync")
-
-	if err := qr.performSync(); err != nil {
-		log.Error().
-			Err(err).
+	// Check if we should run initial sync
+	if qr.shouldRunInitialSync() {
+		log.Info().
 			Str("query", queryID).
-			Msg("Initial sync failed")
+			Bool("syncOnStart", qr.config.GetSyncOnStart()).
+			Msg("Running initial sync")
+
+		if err := qr.performSync(); err != nil {
+			log.Error().
+				Err(err).
+				Str("query", queryID).
+				Msg("Initial sync failed")
+		}
+	} else {
+		log.Info().
+			Str("query", queryID).
+			Msg("Skipping initial sync - period has not elapsed since last snapshot")
 	}
 
 	// Create ticker for periodic sync
@@ -240,6 +259,46 @@ func (qr *QueryRunner) run() {
 			}
 		}
 	}
+}
+
+// shouldRunInitialSync determines if the initial sync should run based on syncOnStart and period timing
+func (qr *QueryRunner) shouldRunInitialSync() bool {
+	if qr.config.GetSyncOnStart() {
+		log.Debug().
+			Str("query", qr.config.Name).
+			Msg("syncOnStart is true, running initial sync")
+		return true // Always run if syncOnStart is true
+	}
+
+	// Check if enough time has passed since last snapshot
+	latest, err := qr.service.kvStorage.GetLatestSnapshotByQuery(qr.config.Name)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("query", qr.config.Name).
+			Msg("Failed to get latest snapshot, running initial sync")
+		return true // Run sync if we can't determine last snapshot time
+	}
+
+	if latest == nil {
+		log.Debug().
+			Str("query", qr.config.Name).
+			Msg("No previous snapshots found, running initial sync")
+		return true // No previous snapshots, run sync
+	}
+
+	timeSinceLastSnapshot := time.Since(latest.SnapshotDate)
+	shouldRun := timeSinceLastSnapshot >= qr.config.Period
+
+	log.Debug().
+		Str("query", qr.config.Name).
+		Time("last_snapshot", latest.SnapshotDate).
+		Dur("time_since_last", timeSinceLastSnapshot).
+		Dur("period", qr.config.Period).
+		Bool("should_run", shouldRun).
+		Msg("Checking if initial sync should run based on period timing")
+
+	return shouldRun
 }
 
 // performSync performs a single synchronization cycle for this query
@@ -443,6 +502,122 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 		case <-qr.ctx.Done():
 			return totalProcessed, fmt.Errorf("context cancelled during census creation")
 		}
+	}
+}
+
+// synchronizeQueries compares YAML query configurations with stored snapshots
+func (s *Service) synchronizeQueries() error {
+	log.Info().Msg("Synchronizing query configurations with storage")
+
+	for _, queryConfig := range s.config.Queries {
+		if queryConfig.IsDisabled() {
+			log.Info().
+				Str("query", queryConfig.Name).
+				Msg("Query is disabled, skipping synchronization")
+			continue
+		}
+
+		// Get latest snapshot for this query
+		latest, err := s.kvStorage.GetLatestSnapshotByQuery(queryConfig.Name)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("query", queryConfig.Name).
+				Msg("Failed to get latest snapshot for query")
+			continue
+		}
+
+		if latest == nil {
+			log.Info().
+				Str("query", queryConfig.Name).
+				Msg("No previous snapshots found for query")
+			continue
+		}
+
+		// Compare configurations and log differences
+		s.logConfigurationChanges(&queryConfig, latest)
+	}
+
+	return nil
+}
+
+// logConfigurationChanges compares current config with stored snapshot and logs differences
+func (s *Service) logConfigurationChanges(current *config.QueryConfig, stored *storage.KVSnapshot) {
+	changes := []string{}
+
+	// Compare period
+	currentPeriod := current.Period.String()
+	if currentPeriod != stored.Period {
+		changes = append(changes, fmt.Sprintf("period: %s -> %s", stored.Period, currentPeriod))
+	}
+
+	// Compare decimals
+	currentDecimals := current.GetDecimals()
+	if currentDecimals != stored.Decimals {
+		changes = append(changes, fmt.Sprintf("decimals: %d -> %d", stored.Decimals, currentDecimals))
+	}
+
+	// Compare min_balance
+	currentMinBalance := current.GetMinBalance()
+	if currentMinBalance != stored.MinBalance {
+		changes = append(changes, fmt.Sprintf("min_balance: %.6f -> %.6f", stored.MinBalance, currentMinBalance))
+	}
+
+	// Compare weight configuration
+	currentWeight := current.GetWeightConfig()
+	if stored.WeightConfig != nil {
+		if currentWeight.Strategy != stored.WeightConfig.Strategy {
+			changes = append(changes, fmt.Sprintf("weight.strategy: %s -> %s", stored.WeightConfig.Strategy, currentWeight.Strategy))
+		}
+
+		// Compare strategy-specific fields
+		switch currentWeight.Strategy {
+		case "constant":
+			if currentWeight.ConstantWeight != nil && stored.WeightConfig.ConstantWeight != nil {
+				if *currentWeight.ConstantWeight != *stored.WeightConfig.ConstantWeight {
+					changes = append(changes, fmt.Sprintf("weight.constant_weight: %d -> %d", *stored.WeightConfig.ConstantWeight, *currentWeight.ConstantWeight))
+				}
+			}
+		case "proportional_auto":
+			if currentWeight.TargetMinWeight != nil && stored.WeightConfig.TargetMinWeight != nil {
+				if *currentWeight.TargetMinWeight != *stored.WeightConfig.TargetMinWeight {
+					changes = append(changes, fmt.Sprintf("weight.target_min_weight: %d -> %d", *stored.WeightConfig.TargetMinWeight, *currentWeight.TargetMinWeight))
+				}
+			}
+		case "proportional_manual":
+			if currentWeight.Multiplier != nil && stored.WeightConfig.Multiplier != nil {
+				if *currentWeight.Multiplier != *stored.WeightConfig.Multiplier {
+					changes = append(changes, fmt.Sprintf("weight.multiplier: %.2f -> %.2f", *stored.WeightConfig.Multiplier, *currentWeight.Multiplier))
+				}
+			}
+		}
+
+		// Compare max_weight
+		if currentWeight.MaxWeight != nil && stored.WeightConfig.MaxWeight != nil {
+			if *currentWeight.MaxWeight != *stored.WeightConfig.MaxWeight {
+				changes = append(changes, fmt.Sprintf("weight.max_weight: %d -> %d", *stored.WeightConfig.MaxWeight, *currentWeight.MaxWeight))
+			}
+		} else if (currentWeight.MaxWeight == nil) != (stored.WeightConfig.MaxWeight == nil) {
+			if currentWeight.MaxWeight != nil {
+				changes = append(changes, fmt.Sprintf("weight.max_weight: none -> %d", *currentWeight.MaxWeight))
+			} else {
+				changes = append(changes, fmt.Sprintf("weight.max_weight: %d -> none", *stored.WeightConfig.MaxWeight))
+			}
+		}
+	}
+
+	// Log changes if any
+	if len(changes) > 0 {
+		log.Info().
+			Str("query", current.Name).
+			Strs("changes", changes).
+			Time("last_snapshot", stored.SnapshotDate).
+			Msg("Configuration changes detected since last snapshot")
+	} else {
+		log.Debug().
+			Str("query", current.Name).
+			Time("last_snapshot", stored.SnapshotDate).
+			Msg("No configuration changes detected")
 	}
 }
 

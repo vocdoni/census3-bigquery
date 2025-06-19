@@ -33,12 +33,14 @@ type WeightConfig struct {
 
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
-	Name       string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
-	Query      string                 `yaml:"query" json:"query"` // BigQuery query name from registry
-	Period     time.Duration          `yaml:"period" json:"period"`
-	Decimals   *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"` // Token decimals (18 for ETH, 6 for USDC, etc.)
-	Parameters map[string]interface{} `yaml:"parameters" json:"parameters"`
-	Weight     *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Name        string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
+	Query       string                 `yaml:"query" json:"query"` // BigQuery query name from registry
+	Period      time.Duration          `yaml:"period" json:"period"`
+	Disabled    *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
+	SyncOnStart *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
+	Decimals    *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"`       // Token decimals (18 for ETH, 6 for USDC, etc.)
+	Parameters  map[string]interface{} `yaml:"parameters" json:"parameters"`
+	Weight      *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -253,6 +255,16 @@ func (qc *QueryConfig) GetWeightConfig() WeightConfig {
 		Strategy:   "proportional_manual",
 		Multiplier: &multiplier,
 	}
+}
+
+// IsDisabled returns true if the query is disabled
+func (qc *QueryConfig) IsDisabled() bool {
+	return qc.Disabled != nil && *qc.Disabled
+}
+
+// GetSyncOnStart returns the syncOnStart setting with default false
+func (qc *QueryConfig) GetSyncOnStart() bool {
+	return qc.SyncOnStart != nil && *qc.SyncOnStart
 }
 
 // ValidateWeightConfig validates the weight configuration

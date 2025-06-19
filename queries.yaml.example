@@ -16,9 +16,11 @@ queries:
   - name: ethereum_holders_equal_voting
     query: ethereum_balances
     period: 1h
-    decimals: 18  # ETH has 18 decimals
+    disabled: false       # Optional: explicitly enable (default: false)
+    syncOnStart: false    # Optional: respect period timing (default: false)
+    decimals: 18          # ETH has 18 decimals
     parameters:
-      min_balance: 0.01  # 0.01 ETH minimum
+      min_balance: 0.01   # 0.01 ETH minimum (human-readable)
     weight:
       strategy: "constant"
       constant_weight: 1  # Everyone gets 1 vote regardless of balance
@@ -27,9 +29,10 @@ queries:
   - name: ethereum_holders_quadratic
     query: ethereum_balances
     period: 1h
+    syncOnStart: true     # Force immediate sync on startup
     decimals: 18
     parameters:
-      min_balance: 0.01  # 0.01 ETH minimum
+      min_balance: 0.01   # 0.01 ETH minimum
     weight:
       strategy: "proportional_auto"
       target_min_weight: 1  # 0.01 ETH = 1 point, 1 ETH = 100 points
@@ -109,6 +112,31 @@ queries:
       target_min_weight: 1  # 0.1 WETH = 1 point
       max_weight: 5000      # Cap for quadratic voting
 
+  # Example 9: Disabled query (keeps existing snapshots accessible)
+  - name: old_ethereum_query
+    query: ethereum_balances
+    period: 6h
+    disabled: true        # Disables sync but keeps snapshots in API
+    decimals: 18
+    parameters:
+      min_balance: 5.0    # 5 ETH minimum
+    weight:
+      strategy: "proportional_manual"
+      multiplier: 50
+
+  # Example 10: Critical query that always syncs immediately on startup
+  - name: critical_governance_census
+    query: ethereum_balances
+    period: 12h
+    syncOnStart: true     # Always runs immediately on service start
+    decimals: 18
+    parameters:
+      min_balance: 0.1    # 0.1 ETH minimum
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 10
+      max_weight: 50000
+
 # Weight Strategy Explanations:
 #
 # 1. "constant": Everyone gets the same weight regardless of balance
@@ -141,3 +169,24 @@ queries:
 # Smart Defaults:
 # - If decimals is omitted, defaults to 18 for ethereum_balances queries
 # - If weight is omitted, defaults to proportional_manual with multiplier 100 (backwards compatible)
+#
+# Query Control Options:
+#
+# disabled (boolean, optional, default: false):
+# - Set to true to disable synchronization for this query
+# - Existing snapshots remain accessible via API
+# - Use for temporarily disabling expensive queries or deprecated configurations
+# - Example: disabled: true
+#
+# syncOnStart (boolean, optional, default: false):
+# - Controls whether sync runs immediately on service startup
+# - If false (default): Respects period timing - only syncs if enough time has passed since last snapshot
+# - If true: Always runs sync immediately on startup, regardless of last snapshot time
+# - Use true for critical queries that must be up-to-date on restart
+# - Example: syncOnStart: true
+#
+# Configuration Synchronization:
+# - At startup, the service compares YAML configurations with stored snapshots
+# - Changes in period, decimals, parameters, or weight config are logged
+# - This helps track configuration drift and ensures transparency
+# - Disabled queries are skipped during synchronization

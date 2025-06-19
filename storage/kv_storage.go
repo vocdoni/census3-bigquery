@@ -246,6 +246,33 @@ func (s *KVSnapshotStorage) LatestSnapshot() (*KVSnapshot, error) {
 	return &snapshot, nil
 }
 
+// GetLatestSnapshotByQuery returns the most recent snapshot for a specific query name
+func (s *KVSnapshotStorage) GetLatestSnapshotByQuery(queryName string) (*KVSnapshot, error) {
+	var latestSnapshot *KVSnapshot
+
+	err := s.db.Iterate([]byte(snapshotPrefix), func(key, value []byte) bool {
+		var snapshot KVSnapshot
+		if err := gob.NewDecoder(bytes.NewReader(value)).Decode(&snapshot); err != nil {
+			return true // Continue iteration, skip invalid entries
+		}
+
+		// Filter by query name
+		if snapshot.QueryName == queryName {
+			// Keep track of the latest snapshot for this query
+			if latestSnapshot == nil || snapshot.SnapshotDate.After(latestSnapshot.SnapshotDate) {
+				latestSnapshot = &snapshot
+			}
+		}
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate snapshots: %w", err)
+	}
+
+	return latestSnapshot, nil
+}
+
 // SnapshotCount returns the total number of snapshots
 func (s *KVSnapshotStorage) SnapshotCount() (int, error) {
 	count := 0

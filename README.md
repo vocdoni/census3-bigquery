@@ -53,7 +53,7 @@ The service uses a YAML configuration file to define multiple queries with indep
        period: 30m
        decimals: 6  # USDC has 6 decimals
        parameters:
-         token_address: "0xA0b86991c6E41578bB6Eee95B132A8E8D6FD99C9"  # USDC
+         token_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"  # USDC
          min_balance: 100  # 100 USDC (human-readable)
        weight:
          strategy: "proportional_auto"
@@ -65,7 +65,7 @@ The service uses a YAML configuration file to define multiple queries with indep
        period: 2h
        decimals: 18  # DAI has 18 decimals
        parameters:
-         token_address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"  # DAI
+         token_address: "0x6b175474e89094c44da98b954eedeac495271d0f"  # DAI
          min_balance: 50  # 50 DAI (human-readable)
        weight:
          strategy: "proportional_manual"
@@ -78,15 +78,17 @@ Use `--list-queries` to see all available queries:
 go run ./cmd/service --list-queries
 ```
 
-
 #### Query Configuration Fields
 
 - **`name`**: User-defined identifier for this query instance (used in logs and API responses)
 - **`query`**: BigQuery query name from the registry (must exist in `bigquery/queries.go`)
 - **`period`**: How often to run this query (e.g., `1h`, `30m`, `2h`)
+- **`disabled`**: Optional boolean to disable synchronization while keeping existing snapshots accessible (default: false)
+- **`syncOnStart`**: Optional boolean to control startup sync behavior (default: false)
 - **`decimals`**: Token decimals for conversion (18 for ETH, 6 for USDC, etc.) - optional with smart defaults
 - **`parameters`**: Query-specific parameters including `min_balance` in human-readable units
 - **`weight`**: Weight calculation configuration for census creation - optional, defaults to proportional_manual with multiplier 100
+
 
 #### Weight Configuration Strategies
 
