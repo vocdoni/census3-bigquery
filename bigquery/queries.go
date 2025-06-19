@@ -42,13 +42,13 @@ var QueryRegistry = map[string]Query{
 		Name:        "erc20_holders",
 		Description: "Fetch ERC20 token holders above minimum balance threshold",
 		SQL: `
-			SELECT to_address as address, SUM(CAST(value AS FLOAT64)) as eth_balance
+			SELECT to_address as address, SUM(CAST(value AS NUMERIC)) as eth_balance
 			FROM ` + "`bigquery-public-data.crypto_ethereum.token_transfers`" + `
 			WHERE token_address = @token_address
 			AND to_address IS NOT NULL
 			GROUP BY to_address
-			HAVING SUM(CAST(value AS FLOAT64)) >= @min_balance
-			ORDER BY SUM(CAST(value AS FLOAT64)) DESC`,
+			HAVING SUM(CAST(value AS NUMERIC)) >= @min_balance
+			ORDER BY SUM(CAST(value AS NUMERIC)) DESC`,
 		Parameters: []string{"token_address", "min_balance"},
 	},
 }
