@@ -26,7 +26,6 @@ import (
 // BigQueryClient interface for BigQuery operations
 type BigQueryClient interface {
 	StreamBalances(ctx context.Context, cfg bigquery.Config, participantCh chan<- bigquery.Participant, errorCh chan<- error)
-	FetchBalancesToCSV(ctx context.Context, cfg bigquery.Config, csvPath string) (int, error)
 	Close() error
 }
 
@@ -331,12 +330,15 @@ func (qr *QueryRunner) performSync() error {
 		Msg("Streaming data from BigQuery and creating census...")
 
 	bqConfig := bigquery.Config{
-		Project:      qr.service.config.Project,
-		MinBalance:   minBalance, // For backward compatibility with bigquery.Config
-		QueryName:    qr.config.Query,
-		QueryParams:  qr.config.Parameters,
-		Decimals:     qr.config.GetDecimals(),
-		WeightConfig: convertWeightConfig(qr.config.GetWeightConfig()),
+		Project:         qr.service.config.Project,
+		MinBalance:      minBalance, // For backward compatibility with bigquery.Config
+		QueryName:       qr.config.Query,
+		QueryParams:     qr.config.Parameters,
+		Decimals:        qr.config.GetDecimals(),
+		WeightConfig:    convertWeightConfig(qr.config.GetWeightConfig()),
+		EstimateFirst:   qr.config.GetEstimateFirst(),
+		CostThresholds:  convertCostThresholds(qr.config.GetCostThresholds()),
+		BigQueryPricing: convertBigQueryPricing(qr.config.GetBigQueryPricing()),
 	}
 
 	actualCount, err := qr.streamAndCreateCensus(censusRef, bqConfig)
@@ -628,6 +630,25 @@ func convertWeightConfig(cfg config.WeightConfig) bigquery.WeightConfig {
 		TargetMinWeight: cfg.TargetMinWeight,
 		Multiplier:      cfg.Multiplier,
 		MaxWeight:       cfg.MaxWeight,
+	}
+}
+
+// convertCostThresholds converts config.CostThresholds to bigquery.CostThresholds
+func convertCostThresholds(cfg config.CostThresholds) bigquery.CostThresholds {
+	return bigquery.CostThresholds{
+		MaxBytesProcessed:   cfg.MaxBytesProcessed,
+		MaxEstimatedCostUSD: cfg.MaxEstimatedCostUSD,
+		WarnThresholdBytes:  cfg.WarnThresholdBytes,
+	}
+}
+
+// convertBigQueryPricing converts config.BigQueryPricing to bigquery.BigQueryPricing
+func convertBigQueryPricing(cfg *config.BigQueryPricing) *bigquery.BigQueryPricing {
+	if cfg == nil {
+		return nil
+	}
+	return &bigquery.BigQueryPricing{
+		PricePerTBProcessed: cfg.PricePerTBProcessed,
 	}
 }
 

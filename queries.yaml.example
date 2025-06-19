@@ -137,6 +137,40 @@ queries:
       target_min_weight: 10
       max_weight: 50000
 
+  # Example 11: Query with cost estimation and billing protection
+  - name: ethereum_balances_cost_controlled
+    query: ethereum_balances
+    period: 6h
+    decimals: 18
+    estimate_first: true  # Enable cost estimation before execution
+    cost_thresholds:
+      max_bytes_processed: 107374182400    # 100 GB maximum (in bytes)
+      max_estimated_cost_usd: 5.0          # $5.00 maximum cost
+      warn_threshold_bytes: 10737418240    # 10 GB warning threshold (in bytes)
+    bigquery_pricing:
+      price_per_tb_processed: 6.25         # $6.25 per TB (current BigQuery pricing)
+    parameters:
+      min_balance: 1.0    # 1 ETH minimum
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1
+
+  # Example 12: Conservative query with strict cost limits
+  - name: ethereum_balances_budget_friendly
+    query: ethereum_balances
+    period: 24h
+    decimals: 18
+    estimate_first: true
+    cost_thresholds:
+      max_bytes_processed: 53687091200     # 50 GB maximum
+      max_estimated_cost_usd: 2.0          # $2.00 maximum cost
+      warn_threshold_bytes: 5368709120     # 5 GB warning threshold
+    parameters:
+      min_balance: 5.0    # 5 ETH minimum (smaller result set)
+    weight:
+      strategy: "constant"
+      constant_weight: 1
+
 # Weight Strategy Explanations:
 #
 # 1. "constant": Everyone gets the same weight regardless of balance
@@ -190,3 +224,55 @@ queries:
 # - Changes in period, decimals, parameters, or weight config are logged
 # - This helps track configuration drift and ensures transparency
 # - Disabled queries are skipped during synchronization
+#
+# BigQuery Cost Estimation and Billing Protection:
+#
+# estimate_first (boolean, optional, default: false):
+# - Enable cost estimation before query execution using BigQuery dry runs
+# - Provides detailed logging of bytes processed and estimated costs
+# - Dry runs are free and fast (typically 1-3 seconds)
+# - Example: estimate_first: true
+#
+# cost_thresholds (object, optional, default: no limits):
+# - Configure automatic cost and size limits for query protection
+# - All fields are optional - omit to disable that specific limit
+# - Available thresholds:
+#   - max_bytes_processed: Maximum bytes the query can process (in bytes)
+#   - max_estimated_cost_usd: Maximum estimated cost in USD
+#   - warn_threshold_bytes: Log warning if query exceeds this size (in bytes)
+# - Query execution is rejected if max limits are exceeded
+# - Example:
+#   cost_thresholds:
+#     max_bytes_processed: 107374182400    # 100 GB
+#     max_estimated_cost_usd: 5.0          # $5.00
+#     warn_threshold_bytes: 10737418240    # 10 GB
+#
+# bigquery_pricing (object, optional, default: $6.25/TB):
+# - Configure custom BigQuery pricing for cost estimation
+# - Defaults to current BigQuery on-demand pricing if omitted
+# - Available fields:
+#   - price_per_tb_processed: Price per terabyte processed in USD
+# - Example:
+#   bigquery_pricing:
+#     price_per_tb_processed: 6.25  # $6.25 per TB
+#
+# Cost Estimation Benefits:
+# - Prevent accidentally expensive queries from running
+# - Get detailed cost logging for billing analysis and optimization
+# - Set automatic cost limits for budget protection
+# - Zero overhead when disabled (fully backward compatible)
+# - Fast estimation using BigQuery's free dry run feature
+#
+# Common Byte Size Values:
+# - 1 GB = 1,073,741,824 bytes
+# - 10 GB = 10,737,418,240 bytes
+# - 50 GB = 53,687,091,200 bytes
+# - 100 GB = 107,374,182,400 bytes
+# - 500 GB = 536,870,912,000 bytes
+# - 1 TB = 1,099,511,627,776 bytes
+#
+# Cost Estimation Example Log Output:
+# INFO Estimating query cost before execution query_name=ethereum_balances
+# INFO Query cost estimation completed bytes_processed=85899345920 bytes_formatted="80.0 GB" estimated_cost_usd=0.5000 is_valid=true query_name=ethereum_balances
+# WARN Query will process large amount of data bytes_processed=85899345920 bytes_formatted="80.0 GB" estimated_cost_usd=0.5000
+# INFO Executing query query_name=ethereum_balances

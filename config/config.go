@@ -11,6 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultBigQueryPricePerTB = 5
+)
+
 // getDefaultDataDir returns the default data directory
 func getDefaultDataDir() string {
 	// Try to use $HOME/.bigcensus3
@@ -31,16 +35,31 @@ type WeightConfig struct {
 	MaxWeight       *int     `yaml:"max_weight,omitempty" json:"max_weight,omitempty"`
 }
 
+// CostThresholds defines limits for BigQuery query execution
+type CostThresholds struct {
+	MaxBytesProcessed   *int64   `yaml:"max_bytes_processed,omitempty" json:"max_bytes_processed,omitempty"`
+	MaxEstimatedCostUSD *float64 `yaml:"max_estimated_cost_usd,omitempty" json:"max_estimated_cost_usd,omitempty"`
+	WarnThresholdBytes  *int64   `yaml:"warn_threshold_bytes,omitempty" json:"warn_threshold_bytes,omitempty"`
+}
+
+// BigQueryPricing holds pricing information for cost estimation
+type BigQueryPricing struct {
+	PricePerTBProcessed float64 `yaml:"price_per_tb_processed" json:"price_per_tb_processed"` // Default: $6.25 per TB
+}
+
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
-	Name        string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
-	Query       string                 `yaml:"query" json:"query"` // BigQuery query name from registry
-	Period      time.Duration          `yaml:"period" json:"period"`
-	Disabled    *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
-	SyncOnStart *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
-	Decimals    *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"`       // Token decimals (18 for ETH, 6 for USDC, etc.)
-	Parameters  map[string]interface{} `yaml:"parameters" json:"parameters"`
-	Weight      *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Name            string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
+	Query           string                 `yaml:"query" json:"query"` // BigQuery query name from registry
+	Period          time.Duration          `yaml:"period" json:"period"`
+	Disabled        *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
+	SyncOnStart     *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
+	Decimals        *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"`       // Token decimals (18 for ETH, 6 for USDC, etc.)
+	Parameters      map[string]interface{} `yaml:"parameters" json:"parameters"`
+	Weight          *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
+	EstimateFirst   *bool                  `yaml:"estimate_first,omitempty" json:"estimate_first,omitempty"`     // Whether to estimate query cost before execution
+	CostThresholds  *CostThresholds        `yaml:"cost_thresholds,omitempty" json:"cost_thresholds,omitempty"`   // Cost limits for query execution
+	BigQueryPricing *BigQueryPricing       `yaml:"bigquery_pricing,omitempty" json:"bigquery_pricing,omitempty"` // Pricing information for cost estimation
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -265,6 +284,31 @@ func (qc *QueryConfig) IsDisabled() bool {
 // GetSyncOnStart returns the syncOnStart setting with default false
 func (qc *QueryConfig) GetSyncOnStart() bool {
 	return qc.SyncOnStart != nil && *qc.SyncOnStart
+}
+
+// GetEstimateFirst returns the estimate_first setting with default false
+func (qc *QueryConfig) GetEstimateFirst() bool {
+	return qc.EstimateFirst != nil && *qc.EstimateFirst
+}
+
+// GetCostThresholds returns the cost thresholds configuration with defaults
+func (qc *QueryConfig) GetCostThresholds() CostThresholds {
+	if qc.CostThresholds != nil {
+		return *qc.CostThresholds
+	}
+	// Return empty thresholds (no limits) by default
+	return CostThresholds{}
+}
+
+// GetBigQueryPricing returns the BigQuery pricing configuration with defaults
+func (qc *QueryConfig) GetBigQueryPricing() *BigQueryPricing {
+	if qc.BigQueryPricing != nil {
+		return qc.BigQueryPricing
+	}
+	// Return default BigQuery pricing
+	return &BigQueryPricing{
+		PricePerTBProcessed: DefaultBigQueryPricePerTB,
+	}
 }
 
 // ValidateWeightConfig validates the weight configuration
