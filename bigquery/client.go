@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -217,13 +218,61 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		return
 	}
 
-	// Stream results to channel
+	// Create channels for parallel processing
+	const maxWorkers = 10
+	balanceRowCh := make(chan balanceRow, maxWorkers*2) // Buffer to prevent blocking
+
+	// Use sync.WaitGroup to wait for all workers to complete
+	var wg sync.WaitGroup
+
+	// Start worker goroutines for parallel processing
+	for range maxWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.processBalanceRows(ctx, balanceRowCh, participantCh, errorCh, cfg)
+		}()
+	}
+
+	// Read from iterator and send to workers (iterator must be read sequentially)
+	go func() {
+		defer close(balanceRowCh)
+		for {
+			var r balanceRow
+			switch err := it.Next(&r); err {
+			case iterator.Done:
+				return
+			case nil:
+				select {
+				case balanceRowCh <- r:
+					// Successfully sent to workers
+				case <-ctx.Done():
+					return
+				}
+			default:
+				select {
+				case errorCh <- fmt.Errorf("iterator error: %w", err):
+				case <-ctx.Done():
+				}
+				return
+			}
+		}
+	}()
+
+	// Wait for all workers to complete
+	wg.Wait()
+}
+
+// processBalanceRows processes balance rows from a channel and sends participants to output channel
+func (c *Client) processBalanceRows(ctx context.Context, balanceRowCh <-chan balanceRow, participantCh chan<- Participant, errorCh chan<- error, cfg Config) {
 	for {
-		var r balanceRow
-		switch err := it.Next(&r); err {
-		case iterator.Done:
-			return
-		case nil:
+		select {
+		case r, ok := <-balanceRowCh:
+			if !ok {
+				// Channel closed, worker should exit
+				return
+			}
+
 			// Convert to participant and send to channel
 			if !common.IsHexAddress(r.Address) {
 				log.Warn().Str("address", r.Address).Msg("Skipping invalid address format")
@@ -248,11 +297,10 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 			case participantCh <- participant:
 				// Successfully sent
 			case <-ctx.Done():
-				errorCh <- ctx.Err()
 				return
 			}
-		default:
-			errorCh <- fmt.Errorf("iterator error: %w", err)
+
+		case <-ctx.Done():
 			return
 		}
 	}

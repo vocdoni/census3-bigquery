@@ -30,7 +30,7 @@ type BigQueryClient interface {
 }
 
 // Default batch size for census creation - configurable
-const DefaultBatchSize = 10000
+const DefaultBatchSize = 30000
 
 // QueryRunner represents a single query runner with its own schedule
 type QueryRunner struct {
@@ -405,7 +405,7 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 	}
 
 	// Create channels for streaming
-	participantCh := make(chan bigquery.Participant, 100)
+	participantCh := make(chan bigquery.Participant, batchSize)
 	errorCh := make(chan error, 1)
 
 	// Start BigQuery streaming in a goroutine
@@ -491,8 +491,8 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 				}
 
 				// Reset batch
-				batch = batch[:0]
-				values = values[:0]
+				batch = [][]byte{}
+				values = [][]byte{}
 			}
 
 		case err := <-errorCh:
