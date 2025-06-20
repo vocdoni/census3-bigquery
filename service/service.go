@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vocdoni/arbo"
 	"github.com/vocdoni/davinci-node/types"
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/metadb"
+	"go.vocdoni.io/dvote/tree/arbo"
 
 	"census3-bigquery/api"
 	"census3-bigquery/bigquery"

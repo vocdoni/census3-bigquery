@@ -230,7 +230,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.processBalanceRows(ctx, balanceRowCh, participantCh, errorCh, cfg)
+			c.processBalanceRows(ctx, balanceRowCh, participantCh, cfg)
 		}()
 	}
 
@@ -264,7 +264,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 }
 
 // processBalanceRows processes balance rows from a channel and sends participants to output channel
-func (c *Client) processBalanceRows(ctx context.Context, balanceRowCh <-chan balanceRow, participantCh chan<- Participant, errorCh chan<- error, cfg Config) {
+func (c *Client) processBalanceRows(ctx context.Context, balanceRowCh <-chan balanceRow, participantCh chan<- Participant, cfg Config) {
 	for {
 		select {
 		case r, ok := <-balanceRowCh:

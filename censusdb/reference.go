@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vocdoni/arbo"
+	"go.vocdoni.io/dvote/tree/arbo"
 )
 
 // CensusRef is a reference to a census. It holds the Merkle tree.

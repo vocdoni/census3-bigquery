@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vocdoni/arbo"
+	arbohash "github.com/vocdoni/arbo"
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/prefixeddb"
+	"go.vocdoni.io/dvote/tree/arbo"
 
 	"census3-bigquery/log"
 )
@@ -36,7 +37,7 @@ var (
 	// ErrKeyNotFound is returned when a key is not found in the Merkle tree.
 	ErrKeyNotFound = fmt.Errorf("key not found")
 
-	defaultHashFunction = arbo.HashFunctionMiMC_BLS12_377
+	defaultHashFunction = arbohash.HashFunctionMiMC_BLS12_377
 )
 
 // updateRootRequest is used to update the root of a census tree.
