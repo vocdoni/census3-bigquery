@@ -119,9 +119,12 @@ func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
 		LastUsed:  time.Now(),
 	}
 
+	// Initialize the database for this census.
+	ref.db = prefixeddb.NewPrefixedDatabase(c.db, censusPrefix(censusID))
+
 	// Create the Merkle tree.
 	tree, err := arbo.NewTree(arbo.Config{
-		Database:     prefixeddb.NewPrefixedDatabase(c.db, censusPrefix(censusID)),
+		Database:     ref.db,
 		MaxLevels:    CensusTreeMaxLevels,
 		HashFunction: defaultHashFunction,
 	})
@@ -236,14 +239,16 @@ func (c *CensusDB) loadCensusRef(censusID uuid.UUID) (*CensusRef, error) {
 		return nil, err
 	}
 
+	ref.db = prefixeddb.NewPrefixedDatabase(c.db, censusPrefix(censusID))
 	tree, err := arbo.NewTree(arbo.Config{
-		Database:     prefixeddb.NewPrefixedDatabase(c.db, censusPrefix(censusID)),
+		Database:     ref.db,
 		MaxLevels:    ref.MaxLevels,
 		HashFunction: defaultHashFunction,
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	ref.tree = tree
 	root, err := tree.Root()
 	if err != nil {
@@ -346,7 +351,7 @@ func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
 		Key:      key,
 		Value:    value,
 		Siblings: siblings,
-		Weight:   (*BigInt)(arbo.BytesToBigInt(value)),
+		Weight:   (*BigInt)(arbo.BytesLEToBigInt(value)),
 	}, nil
 }
 
@@ -357,7 +362,7 @@ func (c *CensusDB) VerifyProof(proof *CensusProof) bool {
 	}
 	// if weight is available, check it
 	if proof.Weight != nil {
-		if proof.Weight.MathBigInt().Cmp(arbo.BytesToBigInt(proof.Value)) != 0 {
+		if proof.Weight.MathBigInt().Cmp(arbo.BytesLEToBigInt(proof.Value)) != 0 {
 			return false
 		}
 	}

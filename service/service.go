@@ -30,7 +30,7 @@ type BigQueryClient interface {
 }
 
 // Default batch size for census creation - configurable
-const DefaultBatchSize = 30000
+const DefaultBatchSize = 10000
 
 // QueryRunner represents a single query runner with its own schedule
 type QueryRunner struct {
@@ -463,7 +463,7 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 			}
 
 			// Convert balance to bytes
-			balanceBytes := arbo.BigIntToBytes(censusRef.Tree().HashFunction().Len(), participant.Balance)
+			balanceBytes := arbo.BigIntToBytesLE(censusRef.Tree().HashFunction().Len(), participant.Balance)
 
 			// Add to current batch
 			batch = append(batch, addressKey)

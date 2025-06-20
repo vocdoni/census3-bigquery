@@ -3,12 +3,14 @@ package censusdb
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math/big"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/tree/arbo"
 )
 
@@ -20,7 +22,8 @@ type CensusRef struct {
 	HashType    string
 	LastUsed    time.Time
 	currentRoot []byte
-	tree        *arbo.Tree `gob:"-"`
+	tree        *arbo.Tree  `gob:"-"`
+	db          db.Database `gob:"-"` // The database where the census is stored.
 	// treeMu protects all access to the underlying Merkle tree.
 	treeMu sync.Mutex `gob:"-"`
 	// updateRootRequest is the channel to send asynchronous root update requests.
@@ -68,14 +71,37 @@ func (cr *CensusRef) Insert(key, value []byte) error {
 	return cr.sendUpdateRoot(newRoot)
 }
 
-// InsertBatch safely inserts a batch of key/value pairs into the Merkle tree.
+// InsertBatch safely inserts a batch of key/value pairs into the Merkle tree using a single write transaction.
 func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) {
 	cr.treeMu.Lock()
-	invalid, err := cr.tree.AddBatch(keys, values)
-	if err != nil {
+	if len(keys) != len(values) {
+		cr.treeMu.Unlock()
+		return nil, fmt.Errorf("keys and values must have the same length: %d != %d", len(keys), len(values))
+	}
+
+	wtx := cr.db.WriteTx()
+	defer wtx.Discard()
+
+	invalid := []arbo.Invalid{}
+	for i, key := range keys {
+		err := cr.tree.AddWithTx(wtx, key, values[i])
+		if err != nil {
+			invalid = append(invalid, arbo.Invalid{Index: i, Error: err})
+			continue
+		}
+	}
+
+	if len(keys) == len(invalid) {
+		cr.treeMu.Unlock()
+		return invalid, nil // No need to update root if no valid keys were added.
+	}
+
+	// Commit the write transaction to the database.
+	if err := wtx.Commit(); err != nil {
 		cr.treeMu.Unlock()
 		return invalid, err
 	}
+	// Get the new root after the batch insertion.
 	newRoot, err := cr.tree.Root()
 	cr.treeMu.Unlock()
 	if err != nil {
