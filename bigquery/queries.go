@@ -111,7 +111,7 @@ var QueryRegistry = map[string]Query{
 
 			SELECT
 				address,
-				1 AS eth_balance          -- placeholder value; balances not queried
+				CAST(1 AS NUMERIC) AS eth_balance          -- placeholder value; balances not queried
 			FROM
 				recent_active_addresses
 			ORDER BY
