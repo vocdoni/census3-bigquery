@@ -64,7 +64,18 @@ queries:
       strategy: "proportional_manual"
       multiplier: 100
 
-  # Example 6: Disabled query (keeps snapshots accessible)
+  # Example 6: Recent activity without balance requirement
+  - name: ethereum_active_users
+    query: ethereum_recent_activity
+    period: 24h
+    estimate_first: true
+    cost_preset: "default"
+    parameters: {}  # No parameters needed
+    weight:
+      strategy: "constant"
+      constant_weight: 1
+
+  # Example 7: Disabled query (keeps snapshots accessible)
   - name: old_query
     query: ethereum_balances
     period: 12h

@@ -70,6 +70,15 @@ The service uses a YAML configuration file to define multiple queries with indep
        weight:
          strategy: "proportional_manual"
          multiplier: 0.1  # 50 DAI = 5 points, 500 DAI = 50 points
+         
+     # Recent activity without balance requirements
+     - name: ethereum_active_users
+       query: ethereum_recent_activity
+       period: 24h
+       parameters: {}  # No parameters needed - finds all active addresses
+       weight:
+         strategy: "constant"
+         constant_weight: 1  # Equal voting for all active users
    ```
 
 Use `--list-queries` to see all available queries:

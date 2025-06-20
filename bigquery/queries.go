@@ -90,6 +90,34 @@ var QueryRegistry = map[string]Query{
 				token_balance DESC`,
 		Parameters: []string{"token_address", "min_balance"},
 	},
+	"ethereum_recent_activity": {
+		Name:        "ethereum_recent_activity",
+		Description: "Fetch Ethereum addresses with activity in the last 90 days (no balance requirement)",
+		SQL: `
+			-- Cost-optimized query for recent activity without balance checks
+			DECLARE snap_date DATE DEFAULT CURRENT_DATE();
+			DECLARE lookback_date DATE DEFAULT DATE_SUB(snap_date, INTERVAL 90 DAY);
+
+			WITH recent_active_addresses AS (
+				SELECT DISTINCT
+					CASE
+						WHEN from_address IS NOT NULL THEN from_address
+						ELSE to_address
+					END AS address
+				FROM ` + "`bigquery-public-data.goog_blockchain_ethereum_mainnet_us.transactions`" + `
+				WHERE DATE(block_timestamp) BETWEEN lookback_date AND snap_date
+					AND (from_address IS NOT NULL OR to_address IS NOT NULL)
+			)
+
+			SELECT
+				address,
+				1 AS eth_balance          -- placeholder value; balances not queried
+			FROM
+				recent_active_addresses
+			ORDER BY
+				address`,
+		Parameters: []string{},
+	},
 }
 
 // GetQuery retrieves a query by name from the registry
