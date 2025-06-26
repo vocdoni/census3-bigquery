@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,10 +11,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vocdoni/arbo"
 	"github.com/vocdoni/davinci-node/types"
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/metadb"
-	"go.vocdoni.io/dvote/tree/arbo"
 
 	"census3-bigquery/api"
 	"census3-bigquery/bigquery"
@@ -88,6 +89,19 @@ func New(cfg *config.Config) (*Service, error) {
 
 	// Initialize KV storage with shared database (using prefixed database)
 	kvStorage := storage.NewKVSnapshotStorage(database)
+
+	// Purge all working censuses at startup (they are temporary and should not persist)
+	go func() {
+		// Use a very small max age to purge all working censuses
+		maxAge := 1 * time.Nanosecond
+		if purged, err := censusDB.PurgeWorkingCensuses(maxAge); err != nil {
+			log.Warn().Err(err).Msg("Failed to purge working censuses at startup")
+		} else if purged > 0 {
+			log.Info().
+				Int("purged_count", purged).
+				Msg("Purged all working censuses at startup")
+		}
+	}()
 
 	// Initialize API server with KV storage and censusDB
 	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort)
@@ -357,9 +371,70 @@ func (qr *QueryRunner) performSync() error {
 		Int("processed_count", actualCount).
 		Str("query", queryID).
 		Float64("min_balance", minBalance).
-		Msg("Census created successfully")
+		Msg("Working census created successfully")
 
-	// Step 4: Store snapshot in KV storage
+	// Step 4: Create new empty census identified by root
+	log.Info().
+		Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+		Str("query", queryID).
+		Msg("Creating root-based census")
+
+	rootCensusRef, err := qr.service.censusDB.NewByRoot(censusRoot)
+	if err != nil {
+		// If census already exists, log error but continue
+		if err == censusdb.ErrCensusAlreadyExists {
+			log.Error().
+				Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+				Str("query", queryID).
+				Msg("Root-based census already exists, continuing")
+		} else {
+			return fmt.Errorf("failed to create root-based census for query %s: %w", queryID, err)
+		}
+		// Load the existing root-based census
+		rootCensusRef, err = qr.service.censusDB.LoadByRoot(censusRoot)
+		if err != nil {
+			return fmt.Errorf("failed to load existing root-based census for query %s: %w", queryID, err)
+		}
+	}
+
+	// Step 5: Export data from working census and import to root-based census
+	log.Info().
+		Str("query", queryID).
+		Msg("Transferring data from working census to root-based census")
+
+	// Use a buffer to transfer data
+	var buf bytes.Buffer
+	if err := qr.service.censusDB.ExportCensusData(censusID, &buf); err != nil {
+		return fmt.Errorf("failed to export census data for query %s: %w", queryID, err)
+	}
+
+	if err := qr.service.censusDB.ImportCensusData(censusRoot, &buf); err != nil {
+		return fmt.Errorf("failed to import census data for query %s: %w", queryID, err)
+	}
+
+	// Step 6: Verify the root matches
+	finalRoot := rootCensusRef.Root()
+	if !bytes.Equal(censusRoot, finalRoot) {
+		return fmt.Errorf("root verification failed for query %s: expected %x, got %x", queryID, censusRoot, finalRoot)
+	}
+
+	log.Info().
+		Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+		Str("query", queryID).
+		Msg("Root verification successful")
+
+	// Step 7: Schedule cleanup of working census in goroutine
+	go func(workingCensusID uuid.UUID, query string) {
+		if err := qr.service.censusDB.CleanupWorkingCensus(workingCensusID); err != nil {
+			log.Error().
+				Str("census_id", workingCensusID.String()).
+				Str("query", query).
+				Err(err).
+				Msg("Failed to cleanup working census")
+		}
+	}(censusID, queryID)
+
+	// Step 8: Store snapshot in KV storage
 	rootHex := types.HexBytes(censusRoot)
 
 	// Convert weight config to storage format
@@ -463,7 +538,7 @@ func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqCo
 			}
 
 			// Convert balance to bytes
-			balanceBytes := arbo.BigIntToBytesLE(censusRef.Tree().HashFunction().Len(), participant.Balance)
+			balanceBytes := arbo.BigIntToBytes(censusRef.Tree().HashFunction().Len(), participant.Balance)
 
 			// Add to current batch
 			batch = append(batch, addressKey)

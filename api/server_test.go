@@ -365,17 +365,26 @@ func TestAPIServerCensusSize(t *testing.T) {
 
 	// Create a test census with some data
 	censusID := uuid.New()
-	censusRef, err := testCensus.New(censusID)
+	workingRef, err := testCensus.New(censusID)
 	c.Assert(err, quicktest.IsNil)
 
 	// Add some test participants
 	testKey := []byte{0x01, 0x02, 0x03}
 	testValue := []byte{0x04, 0x05, 0x06}
-	err = censusRef.Insert(testKey, testValue)
+	err = workingRef.Insert(testKey, testValue)
 	c.Assert(err, quicktest.IsNil)
 
 	// Get the census root
-	root := censusRef.Root()
+	root := workingRef.Root()
+
+	// Create a root-based census and transfer data
+	rootRef, err := testCensus.NewByRoot(root)
+	c.Assert(err, quicktest.IsNil)
+
+	// Insert the same data to the root-based census
+	err = rootRef.Insert(testKey, testValue)
+	c.Assert(err, quicktest.IsNil)
+
 	rootHex := hex.EncodeToString(root)
 
 	// Test census size endpoint using the router
@@ -401,17 +410,26 @@ func TestAPIServerCensusProof(t *testing.T) {
 
 	// Create a test census with some data
 	censusID := uuid.New()
-	censusRef, err := testCensus.New(censusID)
+	workingRef, err := testCensus.New(censusID)
 	c.Assert(err, quicktest.IsNil)
 
 	// Add some test participants
 	testKey := []byte{0x01, 0x02, 0x03}
 	testValue := []byte{0x04, 0x05, 0x06}
-	err = censusRef.Insert(testKey, testValue)
+	err = workingRef.Insert(testKey, testValue)
 	c.Assert(err, quicktest.IsNil)
 
 	// Get the census root
-	root := censusRef.Root()
+	root := workingRef.Root()
+
+	// Create a root-based census and transfer data
+	rootRef, err := testCensus.NewByRoot(root)
+	c.Assert(err, quicktest.IsNil)
+
+	// Insert the same data to the root-based census
+	err = rootRef.Insert(testKey, testValue)
+	c.Assert(err, quicktest.IsNil)
+
 	rootHex := hex.EncodeToString(root)
 	keyHex := hex.EncodeToString(testKey)
 

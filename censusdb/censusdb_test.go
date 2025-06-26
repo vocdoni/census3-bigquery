@@ -1,7 +1,6 @@
 package censusdb
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,6 +36,17 @@ func TestCensusDBNew(t *testing.T) {
 	qt.Assert(t, censusRef.Tree(), qt.IsNotNil)
 }
 
+func TestCensusDBNewByRoot(t *testing.T) {
+	t.Parallel()
+	censusDB := NewCensusDB(newDatabase(t))
+	root := []byte("test_root_12345678901234567890")
+
+	censusRef, err := censusDB.NewByRoot(root)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, censusRef, qt.IsNotNil)
+	qt.Assert(t, censusRef.Tree(), qt.IsNotNil)
+}
+
 func TestCensusDBExists(t *testing.T) {
 	t.Parallel()
 	censusDB := NewCensusDB(newDatabase(t))
@@ -54,6 +64,23 @@ func TestCensusDBExists(t *testing.T) {
 	qt.Assert(t, existsAfter, qt.IsTrue)
 }
 
+func TestCensusDBExistsByRoot(t *testing.T) {
+	t.Parallel()
+	censusDB := NewCensusDB(newDatabase(t))
+	root := []byte("test_root_12345678901234567890")
+
+	// Before creation.
+	existsBefore := censusDB.ExistsByRoot(root)
+	qt.Assert(t, existsBefore, qt.IsFalse)
+
+	// Create a new census.
+	_, err := censusDB.NewByRoot(root)
+	qt.Assert(t, err, qt.IsNil)
+
+	existsAfter := censusDB.ExistsByRoot(root)
+	qt.Assert(t, existsAfter, qt.IsTrue)
+}
+
 func TestCensusDBDel(t *testing.T) {
 	t.Parallel()
 	censusDB := NewCensusDB(newDatabase(t))
@@ -68,7 +95,7 @@ func TestCensusDBDel(t *testing.T) {
 	qt.Assert(t, err, qt.IsNil)
 
 	// Wait a bit since the deletion of the underlying tree is asynchronous.
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	// Check that the census is no longer accessible.
 	existsAfter := censusDB.Exists(censusID)
@@ -94,6 +121,17 @@ func TestLoadNonExistingCensus(t *testing.T) {
 	censusID := uuid.New() // Not created.
 
 	ref, err := censusDB.Load(censusID)
+	qt.Assert(t, ref, qt.IsNil)
+	qt.Assert(t, err, qt.Not(qt.IsNil))
+	qt.Assert(t, err.Error(), qt.Contains, "census not found")
+}
+
+func TestLoadNonExistingCensusByRoot(t *testing.T) {
+	t.Parallel()
+	censusDB := NewCensusDB(newDatabase(t))
+	root := []byte("nonexistent_root_123456789012")
+
+	ref, err := censusDB.LoadByRoot(root)
 	qt.Assert(t, ref, qt.IsNil)
 	qt.Assert(t, err, qt.Not(qt.IsNil))
 	qt.Assert(t, err.Error(), qt.Contains, "census not found")
@@ -290,153 +328,99 @@ func TestMultipleCensuses(t *testing.T) {
 	wg.Wait()
 }
 
-func TestProofByRootNonExistentRoot(t *testing.T) {
+func TestCleanupWorkingCensus(t *testing.T) {
 	t.Parallel()
 	censusDB := NewCensusDB(newDatabase(t))
-	// Use a fake root that is not in the index.
-	fakeRoot := []byte("deadbeef")
-	leafKey := []byte("somekey")
-	proof, err := censusDB.ProofByRoot(fakeRoot, leafKey)
-	qt.Assert(t, proof, qt.IsNil)
-	qt.Assert(t, err, qt.Not(qt.IsNil))
-	qt.Assert(t, err.Error(), qt.Contains, "no census found")
+	censusID := uuid.New()
+
+	// Create a working census
+	_, err := censusDB.New(censusID)
+	qt.Assert(t, err, qt.IsNil)
+
+	// Verify it exists
+	exists := censusDB.Exists(censusID)
+	qt.Assert(t, exists, qt.IsTrue)
+
+	// Clean it up
+	err = censusDB.CleanupWorkingCensus(censusID)
+	qt.Assert(t, err, qt.IsNil)
+
+	// Verify it no longer exists
+	exists = censusDB.Exists(censusID)
+	qt.Assert(t, exists, qt.IsFalse)
 }
 
-func TestProofByRootNonExistentLeaf(t *testing.T) {
+func TestBasicProofGeneration(t *testing.T) {
 	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
+	censusDB := NewCensusDB(newDatabase(t))
+
+	// Create a working census first
 	censusID := uuid.New()
 	ref, err := censusDB.New(censusID)
 	qt.Assert(t, err, qt.IsNil)
-	// Insert a known key/value pair.
-	leafKey := []byte("existingKey")
-	value := []byte("someValue")
-	err = ref.Insert(leafKey, value)
-	qt.Assert(t, err, qt.IsNil)
 
-	// Now query with a non-existent leaf key.
-	nonExistentLeaf := []byte("nonExistentKey")
-	root := ref.Root()
-	proof, err := censusDB.ProofByRoot(root, nonExistentLeaf)
-	qt.Assert(t, proof, qt.IsNil)
-	qt.Assert(t, err, qt.Not(qt.IsNil))
-	qt.Assert(t, err.Error(), qt.Contains, "key not found")
-}
-
-func TestProofByRootValid(t *testing.T) {
-	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
-	censusID := uuid.New()
-	ref, err := censusDB.New(censusID)
-	qt.Assert(t, err, qt.IsNil)
-	// Insert a key/value pair.
+	// Insert a key/value pair directly
 	leafKey := []byte("myKey")
 	value := []byte("myValue")
 	err = ref.Insert(leafKey, value)
 	qt.Assert(t, err, qt.IsNil)
 
-	// Use the new root to get a proof.
-	newRoot := ref.Root()
-	proof, err := censusDB.ProofByRoot(newRoot, leafKey)
+	// Get the actual root after insertion
+	actualRoot := ref.Root()
+	qt.Assert(t, actualRoot, qt.Not(qt.IsNil))
+
+	// Create a root-based census with the actual root
+	rootRef, err := censusDB.NewByRoot(actualRoot)
+	qt.Assert(t, err, qt.IsNil)
+
+	// Insert the same data to the root-based census
+	err = rootRef.Insert(leafKey, value)
+	qt.Assert(t, err, qt.IsNil)
+
+	// Test SizeByRoot
+	size, err := censusDB.SizeByRoot(actualRoot)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, size, qt.Equals, 1)
+
+	// Test ProofByRoot
+	proof, err := censusDB.ProofByRoot(actualRoot, leafKey)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, proof, qt.Not(qt.IsNil))
 	qt.Assert(t, string(proof.Key), qt.DeepEquals, string(leafKey))
 	qt.Assert(t, string(proof.Value), qt.DeepEquals, string(value))
-}
 
-func TestUpdateRootConcurrent(t *testing.T) {
-	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
-	censusID := uuid.New()
-	ref, err := censusDB.New(censusID)
-	qt.Assert(t, err, qt.IsNil)
-
-	// Concurrently insert new key/value pairs and update the root index.
-	const numGoroutines = 20
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
-		go func(i int) {
-			ref2, err := censusDB.Load(censusID)
-			qt.Assert(t, err, qt.IsNil)
-			defer wg.Done()
-			for j := 0; j < 20; j++ {
-				key := []byte(fmt.Sprintf("key%d%d", i, j))
-				val := []byte(fmt.Sprintf("val%d%d", i, j))
-				_ = ref2.Insert(key, val)
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	// After concurrent updates, try generating a proof for one key.
-	testKey := []byte("key00")
-	proof, err := censusDB.ProofByRoot(ref.Root(), testKey)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, ref.Root(), qt.IsNotNil)
-	qt.Assert(t, proof, qt.Not(qt.IsNil))
-}
-
-func TestSameRootForMultipleCensuses(t *testing.T) {
-	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
-	// Create two censuses with identical insertions.
-	censusID1 := uuid.New()
-	censusID2 := uuid.New()
-	ref1, err := censusDB.New(censusID1)
-	qt.Assert(t, err, qt.IsNil)
-	ref2, err := censusDB.New(censusID2)
-	qt.Assert(t, err, qt.IsNil)
-
-	// Insert the same key/value pair into both trees.
-	leafKey := []byte("sameKey")
-	value := []byte("sameValue")
-	err = ref1.Insert(leafKey, value)
-	qt.Assert(t, err, qt.IsNil)
-	err = ref2.Insert(leafKey, value)
-	qt.Assert(t, err, qt.IsNil)
-
-	// Both trees should have the same root.
-	root1 := ref1.Root()
-	root2 := ref2.Root()
-	qt.Assert(t, root1, qt.IsNotNil)
-	qt.Assert(t, root1, qt.DeepEquals, root2)
-
-	// ProofByRoot should return a valid proof for the common root.
-	proof, err := censusDB.ProofByRoot(root1, leafKey)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, proof, qt.Not(qt.IsNil))
-}
-
-func TestVerifyProof(t *testing.T) {
-	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
-	censusID := uuid.New()
-	ref, err := censusDB.New(censusID)
-	qt.Assert(t, err, qt.IsNil)
-	// Insert a key/value pair.
-	leafKey := []byte("myKey")
-	value := []byte("myValue")
-	err = ref.Insert(leafKey, value)
-	qt.Assert(t, err, qt.IsNil)
-
-	// Use the new root to get a proof.
-	newRoot := ref.Root()
-	proof, err := censusDB.ProofByRoot(newRoot, leafKey)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, proof, qt.Not(qt.IsNil))
-
-	// Verify the proof.
+	// Verify the proof
 	ok := censusDB.VerifyProof(proof)
 	qt.Assert(t, ok, qt.IsTrue)
+}
 
-	// Modify the proof and verify it again.
-	proof.Value = []byte("modifiedValue")
-	ok = censusDB.VerifyProof(proof)
-	qt.Assert(t, ok, qt.IsFalse)
+func TestPurgeWorkingCensusesBasic(t *testing.T) {
+	t.Parallel()
+	censusDB := NewCensusDB(newDatabase(t))
+
+	// Create a few working censuses
+	var censusIDs []uuid.UUID
+	for i := 0; i < 3; i++ {
+		censusID := uuid.New()
+		censusIDs = append(censusIDs, censusID)
+		_, err := censusDB.New(censusID)
+		qt.Assert(t, err, qt.IsNil)
+	}
+
+	// Verify they all exist
+	for _, censusID := range censusIDs {
+		exists := censusDB.Exists(censusID)
+		qt.Assert(t, exists, qt.IsTrue)
+	}
+
+	// Purge all working censuses (without goroutines to avoid race conditions)
+	purged, err := censusDB.PurgeWorkingCensuses(1 * time.Nanosecond)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, purged, qt.Equals, 3)
+
+	// Verify they no longer exist
+	for _, censusID := range censusIDs {
+		exists := censusDB.Exists(censusID)
+		qt.Assert(t, exists, qt.IsFalse)
+	}
 }

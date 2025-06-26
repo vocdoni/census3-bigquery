@@ -3,15 +3,14 @@ package censusdb
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"math/big"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vocdoni/arbo"
 	"go.vocdoni.io/dvote/db"
-	"go.vocdoni.io/dvote/tree/arbo"
 )
 
 // CensusRef is a reference to a census. It holds the Merkle tree.
@@ -26,8 +25,6 @@ type CensusRef struct {
 	db          db.Database `gob:"-"` // The database where the census is stored.
 	// treeMu protects all access to the underlying Merkle tree.
 	treeMu sync.Mutex `gob:"-"`
-	// updateRootRequest is the channel to send asynchronous root update requests.
-	updateRootRequest chan *updateRootRequest `gob:"-"`
 }
 
 // Tree returns the underlying arbo.Tree pointer.
@@ -41,73 +38,45 @@ func (cr *CensusRef) SetTree(tree *arbo.Tree) {
 	cr.tree = tree
 }
 
-// sendUpdateRoot sends an update request over the channel and waits until processed.
-func (cr *CensusRef) sendUpdateRoot(newRoot []byte) error {
-	done := make(chan struct{})
-	req := &updateRootRequest{
-		censusID: cr.ID,
-		newRoot:  newRoot,
-		done:     done,
-	}
-	cr.updateRootRequest <- req
-	<-done
-	return nil
-}
-
 // Insert safely inserts a key/value pair into the Merkle tree.
 // It holds treeMu during the Add and Root calls.
 func (cr *CensusRef) Insert(key, value []byte) error {
 	cr.treeMu.Lock()
+	defer cr.treeMu.Unlock()
+
 	err := cr.tree.Add(key, value)
 	if err != nil {
-		cr.treeMu.Unlock()
 		return err
 	}
+
+	// Update the current root
 	newRoot, err := cr.tree.Root()
-	cr.treeMu.Unlock()
 	if err != nil {
 		return err
 	}
-	return cr.sendUpdateRoot(newRoot)
+	cr.currentRoot = newRoot
+
+	return nil
 }
 
-// InsertBatch safely inserts a batch of key/value pairs into the Merkle tree using a single write transaction.
+// InsertBatch safely inserts a batch of key/value pairs into the Merkle tree.
 func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) {
 	cr.treeMu.Lock()
-	if len(keys) != len(values) {
-		cr.treeMu.Unlock()
-		return nil, fmt.Errorf("keys and values must have the same length: %d != %d", len(keys), len(values))
-	}
+	defer cr.treeMu.Unlock()
 
-	wtx := cr.db.WriteTx()
-	defer wtx.Discard()
-
-	invalid := []arbo.Invalid{}
-	for i, key := range keys {
-		err := cr.tree.AddWithTx(wtx, key, values[i])
-		if err != nil {
-			invalid = append(invalid, arbo.Invalid{Index: i, Error: err})
-			continue
-		}
-	}
-
-	if len(keys) == len(invalid) {
-		cr.treeMu.Unlock()
-		return invalid, nil // No need to update root if no valid keys were added.
-	}
-
-	// Commit the write transaction to the database.
-	if err := wtx.Commit(); err != nil {
-		cr.treeMu.Unlock()
-		return invalid, err
-	}
-	// Get the new root after the batch insertion.
-	newRoot, err := cr.tree.Root()
-	cr.treeMu.Unlock()
+	invalid, err := cr.tree.AddBatch(keys, values)
 	if err != nil {
 		return invalid, err
 	}
-	return invalid, cr.sendUpdateRoot(newRoot)
+
+	// Update the current root
+	newRoot, err := cr.tree.Root()
+	if err != nil {
+		return invalid, err
+	}
+	cr.currentRoot = newRoot
+
+	return invalid, nil
 }
 
 // FetchKeysAndValues fetches all keys and values from the Merkle tree.

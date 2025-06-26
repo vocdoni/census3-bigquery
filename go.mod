@@ -11,7 +11,7 @@ require (
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0
-	github.com/vocdoni/arbo v0.0.0-20250610073604-aa44b532ffb3
+	github.com/vocdoni/arbo v0.0.0-20250617181824-a9d4b8c0e936
 	github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829
 	go.vocdoni.io/dvote v1.10.2-0.20250331083941-248a19ae2956
 	google.golang.org/api v0.237.0
@@ -118,6 +118,5 @@ require (
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	lukechampine.com/blake3 v1.4.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
