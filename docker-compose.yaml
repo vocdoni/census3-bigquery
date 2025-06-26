@@ -38,6 +38,52 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.census3-service.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.census3-service.entrypoints=websecure"
+      - "traefik.http.routers.census3-service.tls=true"
+      - "traefik.http.routers.census3-service.tls.certresolver=le"
+      - "traefik.http.services.census3-service.loadbalancer.server.port=${CENSUS3_API_PORT:-8080}"
+      - "traefik.http.routers.census3-service.tls.domains[0].main=${DOMAIN}"
+
+  traefik:
+    image: traefik:3.4.1
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command:
+      - "--log.level=INFO"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le.acme.email=root@vocdoni.io"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    restart: ${RESTART:-unless-stopped}
+    depends_on:
+      - census3-service
+    profiles:
+      - prod
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 300 --label-enable --include-stopped --revive-stopped
+    restart: ${RESTART:-unless-stopped}
+    depends_on:
+      - census3-service
+    profiles:
+      - prod
 
 volumes:
   census3_data:
