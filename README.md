@@ -272,6 +272,127 @@ Service health check.
 }
 ```
 
+## Custom Census Creation
+
+The service provides API endpoints for creating custom censuses with manual participant management. This allows building censuses outside of the automated BigQuery workflow.
+
+### Working vs Published Censuses
+
+- **Working Censuses**: Identified by UUID, mutable, can add participants up to 1M limit
+- **Published Censuses**: Identified by merkle root, immutable, space-optimized for proofs
+
+### Census Management Endpoints
+
+#### `POST /censuses`
+Create a new working census.
+
+**Response:**
+```json
+{
+  "census": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+#### `POST /censuses/{censusId}/participants`
+Add participants to a working census (max 1M total).
+
+**Request:**
+```json
+{
+  "participants": [
+    {
+      "key": "0x742d35Cc6634C0532925a3b8D4C9db96",
+      "weight": "100"
+    },
+    {
+      "key": "0x8ba1f109551bD432803012645Hac136c",
+      "weight": "50"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Keys longer than 20 bytes are automatically hashed
+- Weight defaults to 1 if not provided
+- Returns HTTP 400 if census size limit exceeded
+
+#### `GET /censuses/{censusId}/root`
+Get the merkle root of a working census.
+
+**Response:**
+```json
+{
+  "root": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12"
+}
+```
+
+#### `POST /censuses/{censusId}/publish`
+Publish working census to immutable root-based census.
+
+**Response:**
+```json
+{
+  "root": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
+  "participantCount": 150,
+  "createdAt": "2025-06-18T00:00:00Z",
+  "publishedAt": "2025-06-18T00:01:23Z"
+}
+```
+
+**Process:**
+1. Creates space-optimized root-based census
+2. Transfers data using export/import for efficiency
+3. Verifies root integrity
+4. Cleans up working census in background
+
+#### `DELETE /censuses/{censusId}`
+Delete a working census (only UUID-based censuses can be deleted).
+
+#### `GET /censuses/{censusId}/participants`
+List participants in a working census (placeholder - not yet implemented).
+
+### Configuration
+
+#### `CENSUS3_MAX_CENSUS_SIZE`
+Maximum participants per census (default: 1,000,000).
+
+**Environment variable:**
+```env
+CENSUS3_MAX_CENSUS_SIZE=1000000
+```
+
+**Command line:**
+```bash
+--max-census-size=1000000
+```
+
+### Example Workflow
+
+```bash
+# 1. Create working census
+CENSUS_ID=$(curl -X POST http://localhost:8080/censuses | jq -r '.census')
+
+# 2. Add participants
+curl -X POST http://localhost:8080/censuses/$CENSUS_ID/participants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participants": [
+      {"key": "0x742d35Cc6634C0532925a3b8D4C9db96", "weight": "100"},
+      {"key": "0x8ba1f109551bD432803012645Hac136c", "weight": "50"}
+    ]
+  }'
+
+# 3. Get root
+ROOT=$(curl http://localhost:8080/censuses/$CENSUS_ID/root | jq -r '.root')
+
+# 4. Publish census
+curl -X POST http://localhost:8080/censuses/$CENSUS_ID/publish
+
+# 5. Generate proof using published census
+curl "http://localhost:8080/censuses/$ROOT/proof?key=0x742d35Cc6634C0532925a3b8D4C9db96"
+```
+
 ## Step-by-step setup with Google Cloud configuration
 
 This service requires access to Google Cloud BigQuery to query Ethereum balance data. Follow these step-by-step instructions to set up your Google Cloud project and configure authentication.

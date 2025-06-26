@@ -104,7 +104,7 @@ func New(cfg *config.Config) (*Service, error) {
 	}()
 
 	// Initialize API server with KV storage and censusDB
-	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort)
+	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort, cfg.MaxCensusSize)
 
 	service := &Service{
 		config:         cfg,

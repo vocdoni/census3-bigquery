@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -116,7 +117,7 @@ func TestAPIServerSnapshots(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test basic snapshots endpoint
 	req := httptest.NewRequest("GET", "/snapshots", nil)
@@ -156,7 +157,7 @@ func TestAPIServerSnapshotsPagination(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test pagination - page 1, pageSize 2
 	req := httptest.NewRequest("GET", "/snapshots?page=1&pageSize=2", nil)
@@ -203,7 +204,7 @@ func TestAPIServerSnapshotsFiltering(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test filtering by minBalance
 	req := httptest.NewRequest("GET", "/snapshots?minBalance=0.25", nil)
@@ -242,7 +243,7 @@ func TestAPIServerLatestSnapshot(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test latest snapshot endpoint
 	req := httptest.NewRequest("GET", "/snapshots/latest", nil)
@@ -270,7 +271,7 @@ func TestAPIServerLatestSnapshotEmpty(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test latest snapshot endpoint with no data
 	req := httptest.NewRequest("GET", "/snapshots/latest", nil)
@@ -285,7 +286,7 @@ func TestAPIServerHealth(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test health endpoint
 	req := httptest.NewRequest("GET", "/health", nil)
@@ -294,13 +295,13 @@ func TestAPIServerHealth(t *testing.T) {
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
 
-	var response map[string]interface{}
+	var response HealthResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response["status"], quicktest.Equals, "healthy")
-	c.Assert(response["service"], quicktest.Equals, "census3-bigquery")
-	c.Assert(response["timestamp"], quicktest.Not(quicktest.IsNil))
+	c.Assert(response.Status, quicktest.Equals, "healthy")
+	c.Assert(response.Service, quicktest.Equals, "census3-bigquery")
+	c.Assert(response.Timestamp, quicktest.Not(quicktest.Equals), "")
 }
 
 func TestAPIServerMethodNotAllowed(t *testing.T) {
@@ -308,7 +309,7 @@ func TestAPIServerMethodNotAllowed(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test POST method on snapshots endpoint
 	req := httptest.NewRequest("POST", "/snapshots", nil)
@@ -326,7 +327,7 @@ func TestAPIServerInvalidPagination(t *testing.T) {
 	}
 
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test with invalid page parameter
 	req := httptest.NewRequest("GET", "/snapshots?page=0", nil)
@@ -361,7 +362,7 @@ func TestAPIServerCensusSize(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Create a test census with some data
 	censusID := uuid.New()
@@ -394,11 +395,11 @@ func TestAPIServerCensusSize(t *testing.T) {
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
 
-	var response map[string]interface{}
+	var response CensusSizeResponse
 	err = json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response["size"], quicktest.Equals, float64(1)) // Should have 1 participant
+	c.Assert(response.Size, quicktest.Equals, 1) // Should have 1 participant
 }
 
 func TestAPIServerCensusProof(t *testing.T) {
@@ -406,7 +407,7 @@ func TestAPIServerCensusProof(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Create a test census with some data
 	censusID := uuid.New()
@@ -421,22 +422,43 @@ func TestAPIServerCensusProof(t *testing.T) {
 
 	// Get the census root
 	root := workingRef.Root()
+	t.Logf("Working census root: %x", root)
 
-	// Create a root-based census and transfer data
+	// Create a root-based census and transfer data using export/import
 	rootRef, err := testCensus.NewByRoot(root)
 	c.Assert(err, quicktest.IsNil)
 
-	// Insert the same data to the root-based census
-	err = rootRef.Insert(testKey, testValue)
+	// Use the proper export/import mechanism
+	var buf bytes.Buffer
+	err = testCensus.ExportCensusData(censusID, &buf)
 	c.Assert(err, quicktest.IsNil)
+	t.Logf("Exported %d bytes", buf.Len())
+
+	err = testCensus.ImportCensusData(root, &buf)
+	c.Assert(err, quicktest.IsNil)
+
+	// Verify the root matches
+	finalRoot := rootRef.Root()
+	t.Logf("Final root: %x", finalRoot)
+	c.Assert(bytes.Equal(root, finalRoot), quicktest.IsTrue)
+
+	// Verify the root-based census exists
+	exists := testCensus.ExistsByRoot(root)
+	t.Logf("Root-based census exists: %v", exists)
+	c.Assert(exists, quicktest.IsTrue)
 
 	rootHex := hex.EncodeToString(root)
 	keyHex := hex.EncodeToString(testKey)
+	t.Logf("Testing proof for root %s and key %s", rootHex, keyHex)
 
 	// Test census proof endpoint using the router
 	req := httptest.NewRequest("GET", "/censuses/"+rootHex+"/proof?key="+keyHex, nil)
 	w := httptest.NewRecorder()
 	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Logf("Response body: %s", w.Body.String())
+	}
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
 
@@ -455,7 +477,7 @@ func TestAPIServerCensusProofMissingKey(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
 	// Test census proof endpoint without key parameter using the router
 	req := httptest.NewRequest("GET", "/censuses/010203/proof", nil)
@@ -464,11 +486,11 @@ func TestAPIServerCensusProofMissingKey(t *testing.T) {
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusBadRequest)
 
-	var response map[string]interface{}
+	var response ErrorResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response["code"], quicktest.Equals, float64(40015)) // ErrMalformedParam
+	c.Assert(response.Code, quicktest.Equals, 40015) // ErrMalformedParam
 }
 
 func TestAPIServerCensusParticipants(t *testing.T) {
@@ -476,18 +498,18 @@ func TestAPIServerCensusParticipants(t *testing.T) {
 
 	mockStore := &mockStorage{}
 	testCensus := createTestCensusDB(t)
-	server := NewServer(mockStore, testCensus, 8080)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
-	// Test census participants endpoint using the router (should return not implemented for now)
+	// Test census participants endpoint using the router (should return invalid census ID for short hex)
 	req := httptest.NewRequest("GET", "/censuses/010203/participants", nil)
 	w := httptest.NewRecorder()
 	server.router.ServeHTTP(w, req)
 
-	c.Assert(w.Code, quicktest.Equals, http.StatusInternalServerError)
+	c.Assert(w.Code, quicktest.Equals, http.StatusBadRequest)
 
-	var response map[string]interface{}
+	var response ErrorResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response["code"], quicktest.Equals, float64(50002)) // ErrGenericInternalServerError
+	c.Assert(response.Code, quicktest.Equals, 40010) // ErrInvalidCensusID
 }

@@ -70,7 +70,8 @@ type Config struct {
 	Queries []QueryConfig `mapstructure:"queries"`
 
 	// Census configuration
-	BatchSize int `mapstructure:"batch-size"`
+	BatchSize     int `mapstructure:"batch-size"`
+	MaxCensusSize int `mapstructure:"max-census-size"`
 
 	// Internal fields
 	QueriesFile string `mapstructure:"queries-file"`
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 	pflag.String("data-dir", defaultDataDir, "Data directory for storage (default: $HOME/.bigcensus3 or temp dir)")
 	pflag.String("project", "", "GCP project ID for BigQuery (required)")
 	pflag.Int("batch-size", 10000, "Batch size for census creation")
+	pflag.Int("max-census-size", 1000000, "Maximum number of participants per census")
 	pflag.String("queries-file", "./queries.yaml", "Path to queries configuration file")
 
 	pflag.Parse()
@@ -95,10 +97,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("data-dir", defaultDataDir)
 	viper.SetDefault("project", "")
 	viper.SetDefault("batch-size", 10000)
+	viper.SetDefault("max-census-size", 1000000)
 	viper.SetDefault("queries-file", "./queries.yaml")
 
 	// Bind flags to viper
-	for _, flag := range []string{"api-port", "data-dir", "project", "batch-size", "queries-file"} {
+	for _, flag := range []string{"api-port", "data-dir", "project", "batch-size", "max-census-size", "queries-file"} {
 		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
 			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
 		}
@@ -113,6 +116,7 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("data-dir", "CENSUS3_DATA_DIR")
 	_ = viper.BindEnv("project", "CENSUS3_PROJECT")
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
+	_ = viper.BindEnv("max-census-size", "CENSUS3_MAX_CENSUS_SIZE")
 	_ = viper.BindEnv("queries-file", "CENSUS3_QUERIES_FILE")
 
 	var cfg Config
