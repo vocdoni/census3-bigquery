@@ -306,8 +306,8 @@ func (qr *QueryRunner) shouldRunInitialSync() bool {
 	log.Debug().
 		Str("query", qr.config.Name).
 		Time("last_snapshot", latest.SnapshotDate).
-		Dur("time_since_last", timeSinceLastSnapshot).
-		Dur("period", qr.config.Period).
+		Str("time_since_last", timeSinceLastSnapshot.String()).
+		Str("period", qr.config.Period.String()).
 		Bool("should_run", shouldRun).
 		Msg("Checking if initial sync should run based on period timing")
 

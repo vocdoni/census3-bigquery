@@ -23,6 +23,11 @@ const (
 	censusDBRootPrefix       = "cr_"                   // Prefix for final censuses identified by their root
 	CensusTreeMaxLevels      = 160                     // Maximum levels for the Merkle tree
 	CensusKeyMaxLen          = CensusTreeMaxLevels / 8 // Maximum length of a key in bytes
+
+	// Batch deletion constants
+	maxDeletionBatchSize    = 100 * 1024 * 1024 // 100 MiB
+	maxDeletionBatchCount   = 10000             // Max operations per batch
+	avgKeyValueSizeEstimate = 64                // Conservative size estimate for overhead
 )
 
 var (
@@ -364,7 +369,7 @@ func (c *CensusDB) CleanupWorkingCensus(censusID uuid.UUID) error {
 	log.Info().
 		Str("census_id", fmt.Sprintf("%x", censusID)).
 		Int("keys_deleted", count).
-		Dur("duration", duration).
+		Str("duration", duration.String()).
 		Msg("Working census cleanup completed")
 
 	return err
@@ -373,23 +378,62 @@ func (c *CensusDB) CleanupWorkingCensus(censusID uuid.UUID) error {
 // deleteCensusTreeFromDatabase removes all keys belonging to a census tree from the database.
 func deleteCensusTreeFromDatabase(kv db.Database, prefix []byte) (int, error) {
 	database := prefixeddb.NewPrefixedDatabase(kv, prefix)
-	wtx := database.WriteTx()
-	count := 0
-	err := database.Iterate(nil, func(k, _ []byte) bool {
+
+	var (
+		wtx              = database.WriteTx()
+		count            = 0
+		batchCount       = 0
+		currentBatchSize = 0
+	)
+
+	defer func() {
+		if wtx != nil {
+			wtx.Discard()
+		}
+	}()
+
+	err := database.Iterate(nil, func(k, v []byte) bool {
 		if err := wtx.Delete(k); err != nil {
 			log.Warn().
 				Str("key", fmt.Sprintf("%x", k)).
 				Err(err).
 				Msg("Could not remove key from database")
-		} else {
-			count++
+			return true
 		}
+
+		count++
+		batchCount++
+		currentBatchSize += len(k) + len(v) + avgKeyValueSizeEstimate
+
+		// Check if we should commit this batch
+		if currentBatchSize >= maxDeletionBatchSize || batchCount >= maxDeletionBatchCount {
+			if err := wtx.Commit(); err != nil {
+				log.Error().Err(err).Msg("Failed to commit deletion batch")
+				return false
+			}
+
+			// Start new batch
+			wtx = database.WriteTx()
+			batchCount = 0
+			currentBatchSize = 0
+		}
+
 		return true
 	})
+
 	if err != nil {
-		return 0, err
+		return count, err
 	}
-	return count, wtx.Commit()
+
+	// Commit final batch if there are pending deletions
+	if batchCount > 0 {
+		if err := wtx.Commit(); err != nil {
+			return count, err
+		}
+		wtx = nil
+	}
+
+	return count, nil
 }
 
 // ExportCensusData exports census data from a working census to a writer.
@@ -531,7 +575,7 @@ func (c *CensusDB) PurgeWorkingCensuses(maxAge time.Duration) (int, error) {
 
 	log.Info().
 		Int("purged_count", len(keysToDelete)).
-		Dur("max_age", maxAge).
+		Str("max_age", maxAge.String()).
 		Msg("Purged old working censuses")
 
 	return len(keysToDelete), nil
