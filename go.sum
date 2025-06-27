@@ -282,6 +282,8 @@ github.com/vocdoni/arbo v0.0.0-20250627001816-1f0789e5cbb8 h1:iTs6LUz+tjMJgwT4Ah
 github.com/vocdoni/arbo v0.0.0-20250627001816-1f0789e5cbb8/go.mod h1:sFMKZZydnvuRqmO02ZBjtnD5Q/xn8s+Fp0KEFju2JJE=
 github.com/vocdoni/arbo v0.0.0-20250627070214-64090db00461 h1:AFUz2dwJnLtk0Lr1AwKWnIPxfa1CTcsnE7v4AMJ6HmM=
 github.com/vocdoni/arbo v0.0.0-20250627070214-64090db00461/go.mod h1:sFMKZZydnvuRqmO02ZBjtnD5Q/xn8s+Fp0KEFju2JJE=
+github.com/vocdoni/arbo v0.0.0-20250627114704-703dba35f5ef h1:tb05YXaubDzSRhBcLJQ0FxQ+WozuJ/RxvApBO7nRYVs=
+github.com/vocdoni/arbo v0.0.0-20250627114704-703dba35f5ef/go.mod h1:sFMKZZydnvuRqmO02ZBjtnD5Q/xn8s+Fp0KEFju2JJE=
 github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829 h1:r0g7M+d+VKyShoTSiYozaMPNqXYMwg30s0NtSaScwqI=
 github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829/go.mod h1:FyLpPfxoFMJLSLXcg4QUQrzFKy+Kz8fu2k75FUVtVFg=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
