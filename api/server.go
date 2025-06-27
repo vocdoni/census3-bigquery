@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 	"github.com/vocdoni/arbo"
 	"github.com/vocdoni/davinci-node/types"
 
@@ -35,7 +36,7 @@ type Server struct {
 	censusDB      *censusdb.CensusDB
 	port          int
 	maxCensusSize int
-	router        *mux.Router
+	router        chi.Router
 }
 
 // CensusParticipant represents a participant in the census API response
@@ -119,32 +120,37 @@ func NewServer(storage SnapshotStorage, censusDB *censusdb.CensusDB, port int, m
 
 // setupRouter initializes the router with all endpoints
 func (s *Server) setupRouter() {
-	s.router = mux.NewRouter()
+	r := chi.NewRouter()
+
+	// Add logging middleware
+	r.Use(middleware.Logger)
+
+	// Add CORS middleware
+	r.Use(s.corsMiddleware)
 
 	// Existing snapshot endpoints
-	s.router.HandleFunc("/snapshots", s.handleSnapshots).Methods("GET")
-	s.router.HandleFunc("/snapshots/latest", s.handleLatestSnapshot).Methods("GET")
-	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
+	r.Get("/snapshots", s.handleSnapshots)
+	r.Get("/snapshots/latest", s.handleLatestSnapshot)
+	r.Get("/health", s.handleHealth)
 
 	// Census CRUD endpoints
-	s.router.HandleFunc("/censuses", s.handleCreateCensus).Methods("POST")
-	s.router.HandleFunc("/censuses/{censusId}/participants", s.handleAddParticipants).Methods("POST")
-	s.router.HandleFunc("/censuses/{censusId}/participants", s.handleGetParticipants).Methods("GET")
-	s.router.HandleFunc("/censuses/{censusId}/root", s.handleGetRoot).Methods("GET")
-	s.router.HandleFunc("/censuses/{censusId}/publish", s.handlePublishCensus).Methods("POST")
-	s.router.HandleFunc("/censuses/{censusId}", s.handleDeleteCensus).Methods("DELETE")
+	r.Post("/censuses", s.handleCreateCensus)
+	r.Post("/censuses/{censusId}/participants", s.handleAddParticipants)
+	r.Get("/censuses/{censusId}/participants", s.handleGetParticipants)
+	r.Get("/censuses/{censusId}/root", s.handleGetRoot)
+	r.Post("/censuses/{censusId}/publish", s.handlePublishCensus)
+	r.Delete("/censuses/{censusId}", s.handleDeleteCensus)
 
 	// Census query endpoints (support both UUID and root)
-	s.router.HandleFunc("/censuses/{censusId}/size", s.handleCensusSize).Methods("GET")
-	s.router.HandleFunc("/censuses/{censusRoot}/proof", s.handleCensusProof).Methods("GET")
-	s.router.HandleFunc("/censuses/{censusRoot}/participants", s.handleCensusParticipants).Methods("GET")
+	r.Get("/censuses/{censusId}/size", s.handleCensusSize)
+	r.Get("/censuses/{censusRoot}/proof", s.handleCensusProof)
+	r.Get("/censuses/{censusRoot}/participants", s.handleCensusParticipants)
+
+	s.router = r
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	// Add CORS middleware
-	handler := s.corsMiddleware(s.router)
-
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Info().Str("address", addr).Msg("HTTP server binding to address...")
 
@@ -158,7 +164,7 @@ func (s *Server) Start() error {
 	}()
 
 	log.Info().Str("address", addr).Msg("Starting HTTP server...")
-	return http.ListenAndServe(addr, handler)
+	return http.ListenAndServe(addr, s.router)
 }
 
 // parsePaginationParams extracts pagination parameters from query string
@@ -211,11 +217,6 @@ func (s *Server) paginateSnapshots(snapshots []storage.KVSnapshot, params Pagina
 
 // handleSnapshots handles GET /snapshots with pagination support
 func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Parse pagination parameters
 	params := s.parsePaginationParams(r)
 
@@ -283,11 +284,6 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 
 // handleLatestSnapshot handles GET /snapshots/latest
 func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Get latest snapshot from storage
 	latest, err := s.storage.LatestSnapshot()
 	if err != nil {
@@ -322,11 +318,6 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 
 // handleHealth handles GET /health
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
@@ -343,8 +334,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleCensusSize handles GET /censuses/{censusId}/size (supports both UUID and root)
 func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusParam := vars["censusId"]
+	censusParam := chi.URLParam(r, "censusId")
 
 	var size int
 	var err error
@@ -387,8 +377,7 @@ func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
 
 // handleCensusProof handles GET /censuses/{censusRoot}/proof?key={hexKey}
 func (s *Server) handleCensusProof(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	rootHex := vars["censusRoot"]
+	rootHex := chi.URLParam(r, "censusRoot")
 
 	// Parse the root from hex
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
@@ -427,13 +416,18 @@ func (s *Server) handleCensusProof(w http.ResponseWriter, r *http.Request) {
 
 // handleCensusParticipants handles GET /censuses/{censusRoot}/participants with pagination
 func (s *Server) handleCensusParticipants(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	rootHex := vars["censusRoot"]
+	rootHex := chi.URLParam(r, "censusRoot")
 
-	// Parse the root from hex
-	_, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
+	// Parse the root from hex - validate format first
+	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
 		ErrInvalidCensusID.WithErr(err).Write(w)
+		return
+	}
+
+	// Check if the root length is reasonable (should be a hash)
+	if len(root) < 16 { // Minimum reasonable hash length
+		ErrInvalidCensusID.With("census root too short").Write(w)
 		return
 	}
 
@@ -472,8 +466,7 @@ func (s *Server) handleCreateCensus(w http.ResponseWriter, r *http.Request) {
 
 // handleAddParticipants handles POST /censuses/{censusId}/participants
 func (s *Server) handleAddParticipants(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusIDStr := vars["censusId"]
+	censusIDStr := chi.URLParam(r, "censusId")
 
 	// Parse census ID
 	censusID, err := uuid.Parse(censusIDStr)
@@ -550,8 +543,7 @@ func (s *Server) handleAddParticipants(w http.ResponseWriter, r *http.Request) {
 
 // handleGetParticipants handles GET /censuses/{censusId}/participants
 func (s *Server) handleGetParticipants(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusIDStr := vars["censusId"]
+	censusIDStr := chi.URLParam(r, "censusId")
 
 	// Parse census ID
 	censusID, err := uuid.Parse(censusIDStr)
@@ -574,8 +566,7 @@ func (s *Server) handleGetParticipants(w http.ResponseWriter, r *http.Request) {
 
 // handleGetRoot handles GET /censuses/{censusId}/root
 func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusIDStr := vars["censusId"]
+	censusIDStr := chi.URLParam(r, "censusId")
 
 	// Parse census ID
 	censusID, err := uuid.Parse(censusIDStr)
@@ -606,8 +597,7 @@ func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteCensus handles DELETE /censuses/{censusId}
 func (s *Server) handleDeleteCensus(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusIDStr := vars["censusId"]
+	censusIDStr := chi.URLParam(r, "censusId")
 
 	// Parse census ID
 	censusID, err := uuid.Parse(censusIDStr)
@@ -627,8 +617,7 @@ func (s *Server) handleDeleteCensus(w http.ResponseWriter, r *http.Request) {
 
 // handlePublishCensus handles POST /censuses/{censusId}/publish
 func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	censusIDStr := vars["censusId"]
+	censusIDStr := chi.URLParam(r, "censusId")
 
 	// Parse census ID
 	censusID, err := uuid.Parse(censusIDStr)

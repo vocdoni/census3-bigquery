@@ -6,8 +6,8 @@ require (
 	cloud.google.com/go/bigquery v1.69.1-0.20250619133305-f734ec685a78
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/frankban/quicktest v1.14.6
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/mux v1.8.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0

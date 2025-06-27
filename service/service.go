@@ -245,10 +245,6 @@ func (s *Service) Start() error {
 		}
 	}()
 
-	// Give the API server a moment to start before running background operations
-	log.Info().Msg("Waiting for API server to initialize...")
-	time.Sleep(100 * time.Millisecond)
-
 	// Start background query synchronization (moved from service initialization)
 	log.Info().Msg("Starting background query synchronization...")
 	s.wg.Add(1)

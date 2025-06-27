@@ -311,10 +311,10 @@ func TestAPIServerMethodNotAllowed(t *testing.T) {
 	testCensus := createTestCensusDB(t)
 	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
-	// Test POST method on snapshots endpoint
+	// Test POST method on snapshots endpoint using the router
 	req := httptest.NewRequest("POST", "/snapshots", nil)
 	w := httptest.NewRecorder()
-	server.handleSnapshots(w, req)
+	server.router.ServeHTTP(w, req)
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusMethodNotAllowed)
 }
