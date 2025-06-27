@@ -11,7 +11,7 @@ require (
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0
-	github.com/vocdoni/arbo v0.0.0-20250627114704-703dba35f5ef
+	github.com/vocdoni/arbo v0.0.0-20250627143754-3263cce4e363
 	github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829
 	go.vocdoni.io/dvote v1.10.2-0.20250331083941-248a19ae2956
 	google.golang.org/api v0.237.0

@@ -428,13 +428,8 @@ func TestAPIServerCensusProof(t *testing.T) {
 	rootRef, err := testCensus.NewByRoot(root)
 	c.Assert(err, quicktest.IsNil)
 
-	// Use the proper export/import mechanism
-	var buf bytes.Buffer
-	err = testCensus.ExportCensusData(censusID, &buf)
-	c.Assert(err, quicktest.IsNil)
-	t.Logf("Exported %d bytes", buf.Len())
-
-	err = testCensus.ImportCensusData(root, &buf)
+	// Copy the data to the root-based census
+	err = testCensus.PublishCensus(censusID, rootRef)
 	c.Assert(err, quicktest.IsNil)
 
 	// Verify the root matches

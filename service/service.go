@@ -402,14 +402,8 @@ func (qr *QueryRunner) performSync() error {
 		Str("query", queryID).
 		Msg("Transferring data from working census to root-based census")
 
-	// Use a buffer to transfer data
-	var buf bytes.Buffer
-	if err := qr.service.censusDB.ExportCensusData(censusID, &buf); err != nil {
-		return fmt.Errorf("failed to export census data for query %s: %w", queryID, err)
-	}
-
-	if err := qr.service.censusDB.ImportCensusData(censusRoot, &buf); err != nil {
-		return fmt.Errorf("failed to import census data for query %s: %w", queryID, err)
+	if err := qr.service.censusDB.PublishCensus(censusID, rootCensusRef); err != nil {
+		return fmt.Errorf("failed to publish census for query %s: %w", queryID, err)
 	}
 
 	// Step 6: Verify the root matches

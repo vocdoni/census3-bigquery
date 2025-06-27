@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -110,7 +109,6 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []
 		MaxLevels:    CensusTreeMaxLevels,
 		HashFunction: defaultHashFunction,
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -436,9 +434,8 @@ func deleteCensusTreeFromDatabase(kv db.Database, prefix []byte) (int, error) {
 	return count, nil
 }
 
-// ExportCensusData exports census data from a working census to a writer.
-func (c *CensusDB) ExportCensusData(censusID uuid.UUID, writer io.Writer) error {
-	ref, err := c.Load(censusID)
+func (c *CensusDB) PublishCensus(originCensusID uuid.UUID, destinationRef *CensusRef) error {
+	ref, err := c.Load(originCensusID)
 	if err != nil {
 		return err
 	}
@@ -446,20 +443,7 @@ func (c *CensusDB) ExportCensusData(censusID uuid.UUID, writer io.Writer) error 
 	ref.treeMu.Lock()
 	defer ref.treeMu.Unlock()
 
-	return ref.tree.DumpWriter(nil, writer)
-}
-
-// ImportCensusData imports census data from a reader to a root-based census.
-func (c *CensusDB) ImportCensusData(root []byte, reader io.Reader) error {
-	ref, err := c.LoadByRoot(root)
-	if err != nil {
-		return err
-	}
-
-	ref.treeMu.Lock()
-	defer ref.treeMu.Unlock()
-
-	return ref.tree.ImportDumpReader(reader)
+	return ref.tree.CloneAndVacuum(destinationRef.db, nil)
 }
 
 // VerifyProof checks the validity of a Merkle proof.

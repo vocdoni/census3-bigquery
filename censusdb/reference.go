@@ -69,17 +69,11 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) 
 		return nil, fmt.Errorf("keys and values must have the same length: %d != %d", len(keys), len(values))
 	}
 
-	invalids := []arbo.Invalid{}
 	wtx := cr.tree.Database().WriteTx()
 	defer wtx.Discard()
-	// Iterate over keys and use Add() for each one
-	for i, key := range keys {
-		if err := cr.tree.AddWithTx(wtx, key, values[i]); err != nil {
-			invalids = append(invalids, arbo.Invalid{
-				Error: err,
-				Index: i,
-			})
-		}
+	invalids, err := cr.tree.AddBatchWithTx(wtx, keys, values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add batch: %w", err)
 	}
 
 	// Update the current root
@@ -87,9 +81,13 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) 
 	if err != nil {
 		return invalids, fmt.Errorf("failed to get new root: %w", err)
 	}
+	if err := wtx.Commit(); err != nil {
+		return invalids, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	cr.currentRoot = newRoot
 
-	return invalids, wtx.Commit()
+	return invalids, nil
 }
 
 // FetchKeysAndValues fetches all keys and values from the Merkle tree.

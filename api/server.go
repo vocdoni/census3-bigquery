@@ -656,16 +656,9 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Export data from working census and import to root-based census
-	var buf bytes.Buffer
-	if err := s.censusDB.ExportCensusData(censusID, &buf); err != nil {
+	// Copy participants from working census to root-based census
+	if err := s.censusDB.PublishCensus(censusID, rootRef); err != nil {
 		ErrGenericInternalServerError.WithErr(err).Write(w)
-		return
-	}
-
-	if err := s.censusDB.ImportCensusData(root, &buf); err != nil {
-		ErrGenericInternalServerError.WithErr(err).Write(w)
-		return
 	}
 
 	// Verify root matches
