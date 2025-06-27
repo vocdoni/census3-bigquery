@@ -29,6 +29,12 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
 
+	// Set log level from configuration
+	if err := log.SetLevelFromString(cfg.LogLevel); err != nil {
+		log.Fatal().Err(err).Msg("Failed to set log level")
+	}
+	log.Info().Str("log_level", cfg.LogLevel).Msg("Log level configured")
+
 	// Create and start service
 	svc, err := service.New(cfg)
 	if err != nil {

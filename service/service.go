@@ -56,16 +56,26 @@ type Service struct {
 
 // New creates a new service instance
 func New(cfg *config.Config) (*Service, error) {
+	log.Info().Msg("Starting service initialization...")
+	startTime := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize BigQuery client
+	log.Info().Msg("Creating BigQuery client...")
+	bqStartTime := time.Now()
 	bqClient, err := bigquery.NewClient(ctx, cfg.Project)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create BigQuery client: %w", err)
 	}
+	log.Info().
+		Str("duration", time.Since(bqStartTime).String()).
+		Msg("BigQuery client created successfully")
 
 	// Initialize shared database for both census and snapshots
+	log.Info().
+		Str("data_dir", cfg.DataDir).
+		Msg("Creating data directory...")
 	dataDir := cfg.DataDir
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		cancel()
@@ -74,7 +84,12 @@ func New(cfg *config.Config) (*Service, error) {
 		}
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
+	log.Info().Msg("Data directory created successfully")
 
+	log.Info().
+		Str("data_dir", dataDir).
+		Msg("Initializing Pebble database...")
+	dbStartTime := time.Now()
 	database, err := metadb.New(db.TypePebble, dataDir)
 	if err != nil {
 		cancel()
@@ -83,28 +98,56 @@ func New(cfg *config.Config) (*Service, error) {
 		}
 		return nil, fmt.Errorf("failed to create database: %w", err)
 	}
+	log.Info().
+		Str("duration", time.Since(dbStartTime).String()).
+		Msg("Database initialized successfully")
 
 	// Initialize CensusDB with shared database
+	log.Info().Msg("Creating CensusDB...")
+	censusDBStartTime := time.Now()
 	censusDB := censusdb.NewCensusDB(database)
+	log.Info().
+		Str("duration", time.Since(censusDBStartTime).String()).
+		Msg("CensusDB created successfully")
 
 	// Initialize KV storage with shared database (using prefixed database)
+	log.Info().Msg("Creating KV snapshot storage...")
+	kvStartTime := time.Now()
 	kvStorage := storage.NewKVSnapshotStorage(database)
+	log.Info().
+		Str("duration", time.Since(kvStartTime).String()).
+		Msg("KV snapshot storage created successfully")
 
 	// Purge all working censuses at startup (they are temporary and should not persist)
+	log.Info().Msg("Starting background working census purge...")
 	go func() {
+		purgeStartTime := time.Now()
 		// Use a very small max age to purge all working censuses
 		maxAge := 1 * time.Nanosecond
+		log.Debug().Msg("Purging working censuses...")
 		if purged, err := censusDB.PurgeWorkingCensuses(maxAge); err != nil {
 			log.Warn().Err(err).Msg("Failed to purge working censuses at startup")
 		} else if purged > 0 {
 			log.Info().
 				Int("purged_count", purged).
+				Str("duration", time.Since(purgeStartTime).String()).
 				Msg("Purged all working censuses at startup")
+		} else {
+			log.Info().
+				Str("duration", time.Since(purgeStartTime).String()).
+				Msg("No working censuses to purge")
 		}
 	}()
 
 	// Initialize API server with KV storage and censusDB
+	log.Info().
+		Int("api_port", cfg.APIPort).
+		Msg("Creating API server...")
+	apiStartTime := time.Now()
 	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort, cfg.MaxCensusSize)
+	log.Info().
+		Str("duration", time.Since(apiStartTime).String()).
+		Msg("API server created successfully")
 
 	service := &Service{
 		config:         cfg,
@@ -116,12 +159,10 @@ func New(cfg *config.Config) (*Service, error) {
 		cancel:         cancel,
 	}
 
-	// Synchronize queries with storage at startup
-	if err := service.synchronizeQueries(); err != nil {
-		log.Warn().Err(err).Msg("Failed to synchronize queries with storage")
-	}
-
 	// Create query runners for each enabled query configuration
+	log.Info().
+		Int("query_count", len(cfg.Queries)).
+		Msg("Creating query runners...")
 	for i, queryConfig := range cfg.Queries {
 		if queryConfig.IsDisabled() {
 			log.Info().
@@ -136,7 +177,16 @@ func New(cfg *config.Config) (*Service, error) {
 			return nil, fmt.Errorf("failed to create query runner %d (%s): %w", i+1, queryConfig.Name, err)
 		}
 		service.queryRunners = append(service.queryRunners, runner)
+		log.Info().
+			Str("query", queryConfig.Name).
+			Int("runner_index", i+1).
+			Msg("Query runner created successfully")
 	}
+
+	log.Info().
+		Str("total_duration", time.Since(startTime).String()).
+		Int("query_runners", len(service.queryRunners)).
+		Msg("Service initialization completed successfully")
 
 	return service, nil
 }
@@ -185,15 +235,43 @@ func (s *Service) Start() error {
 	}
 
 	// Start API server in a goroutine
+	log.Info().Msg("Starting API server...")
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		log.Info().Msg("API server goroutine started, binding to port...")
 		if err := s.apiServer.Start(); err != nil {
 			log.Error().Err(err).Msg("API server error")
 		}
 	}()
 
+	// Give the API server a moment to start before running background operations
+	log.Info().Msg("Waiting for API server to initialize...")
+	time.Sleep(100 * time.Millisecond)
+
+	// Start background query synchronization (moved from service initialization)
+	log.Info().Msg("Starting background query synchronization...")
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		syncStartTime := time.Now()
+		log.Info().Msg("Running query synchronization in background...")
+		if err := s.synchronizeQueries(); err != nil {
+			log.Warn().
+				Err(err).
+				Str("duration", time.Since(syncStartTime).String()).
+				Msg("Failed to synchronize queries with storage")
+		} else {
+			log.Info().
+				Str("duration", time.Since(syncStartTime).String()).
+				Msg("Query synchronization completed successfully")
+		}
+	}()
+
 	// Start each query runner in its own goroutine
+	log.Info().
+		Int("runner_count", len(s.queryRunners)).
+		Msg("Starting query runners...")
 	for i, runner := range s.queryRunners {
 		s.wg.Add(1)
 		go func(index int, qr *QueryRunner) {
@@ -205,6 +283,8 @@ func (s *Service) Start() error {
 			qr.run()
 		}(i, runner)
 	}
+
+	log.Info().Msg("All service components started successfully")
 
 	// Wait for shutdown signal
 	s.waitForShutdown()

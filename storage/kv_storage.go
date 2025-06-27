@@ -9,6 +9,8 @@ import (
 
 	"github.com/vocdoni/davinci-node/types"
 	"go.vocdoni.io/dvote/db"
+
+	"census3-bigquery/log"
 )
 
 const (
@@ -166,11 +168,13 @@ func (s *KVSnapshotStorage) forceUpdateMetadata(wtx db.WriteTx, snapshot KVSnaps
 
 // Snapshots returns all snapshots ordered by most recent first
 func (s *KVSnapshotStorage) Snapshots() ([]KVSnapshot, error) {
+	startTime := time.Now()
 	var snapshots []KVSnapshot
 
 	err := s.db.Iterate([]byte(snapshotPrefix), func(key, value []byte) bool {
 		var snapshot KVSnapshot
 		if err := gob.NewDecoder(bytes.NewReader(value)).Decode(&snapshot); err != nil {
+			log.Warn().Err(err).Msg("Failed to decode snapshot, skipping")
 			return true // Continue iteration, skip invalid entries
 		}
 		snapshots = append(snapshots, snapshot)
@@ -178,6 +182,10 @@ func (s *KVSnapshotStorage) Snapshots() ([]KVSnapshot, error) {
 	})
 
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("duration", time.Since(startTime).String()).
+			Msg("Database iteration failed")
 		return nil, fmt.Errorf("failed to iterate snapshots: %w", err)
 	}
 

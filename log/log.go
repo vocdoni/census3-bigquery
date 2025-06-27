@@ -82,6 +82,16 @@ func SetLevel(level zerolog.Level) {
 	logger = logger.Level(level)
 }
 
+// SetLevelFromString sets the log level from a string
+func SetLevelFromString(levelStr string) error {
+	level, err := zerolog.ParseLevel(strings.ToLower(levelStr))
+	if err != nil {
+		return fmt.Errorf("invalid log level '%s': %w (valid levels: trace, debug, info, warn, error, fatal, panic)", levelStr, err)
+	}
+	SetLevel(level)
+	return nil
+}
+
 // SetDebug enables debug logging
 func SetDebug() {
 	SetLevel(zerolog.DebugLevel)

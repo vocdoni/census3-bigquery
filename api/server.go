@@ -146,8 +146,18 @@ func (s *Server) Start() error {
 	handler := s.corsMiddleware(s.router)
 
 	addr := fmt.Sprintf(":%d", s.port)
-	log.Info().Str("address", addr).Msg("Starting API server")
+	log.Info().Str("address", addr).Msg("HTTP server binding to address...")
 
+	// Log when server is ready to accept connections
+	go func() {
+		// Small delay to ensure the server has started
+		time.Sleep(50 * time.Millisecond)
+		log.Info().
+			Str("address", addr).
+			Msg("API server ready to accept requests")
+	}()
+
+	log.Info().Str("address", addr).Msg("Starting HTTP server...")
 	return http.ListenAndServe(addr, handler)
 }
 

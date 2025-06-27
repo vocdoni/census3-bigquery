@@ -62,9 +62,10 @@ type QueriesFile struct {
 // Config holds all configuration for the service
 type Config struct {
 	// Service configuration
-	APIPort int    `mapstructure:"api-port"`
-	DataDir string `mapstructure:"data-dir"`
-	Project string `mapstructure:"project"`
+	APIPort  int    `mapstructure:"api-port"`
+	DataDir  string `mapstructure:"data-dir"`
+	Project  string `mapstructure:"project"`
+	LogLevel string `mapstructure:"log-level"`
 
 	// Query configurations
 	Queries []QueryConfig `mapstructure:"queries"`
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 	pflag.Int("api-port", 8080, "API server port")
 	pflag.String("data-dir", defaultDataDir, "Data directory for storage (default: $HOME/.bigcensus3 or temp dir)")
 	pflag.String("project", "", "GCP project ID for BigQuery (required)")
+	pflag.String("log-level", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	pflag.Int("batch-size", 10000, "Batch size for census creation")
 	pflag.Int("max-census-size", 1000000, "Maximum number of participants per census")
 	pflag.String("queries-file", "./queries.yaml", "Path to queries configuration file")
@@ -96,12 +98,13 @@ func Load() (*Config, error) {
 	viper.SetDefault("api-port", 8080)
 	viper.SetDefault("data-dir", defaultDataDir)
 	viper.SetDefault("project", "")
+	viper.SetDefault("log-level", "info")
 	viper.SetDefault("batch-size", 10000)
 	viper.SetDefault("max-census-size", 1000000)
 	viper.SetDefault("queries-file", "./queries.yaml")
 
 	// Bind flags to viper
-	for _, flag := range []string{"api-port", "data-dir", "project", "batch-size", "max-census-size", "queries-file"} {
+	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file"} {
 		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
 			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
 		}
@@ -115,6 +118,7 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("api-port", "CENSUS3_API_PORT")
 	_ = viper.BindEnv("data-dir", "CENSUS3_DATA_DIR")
 	_ = viper.BindEnv("project", "CENSUS3_PROJECT")
+	_ = viper.BindEnv("log-level", "CENSUS3_LOG_LEVEL")
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
 	_ = viper.BindEnv("max-census-size", "CENSUS3_MAX_CENSUS_SIZE")
 	_ = viper.BindEnv("queries-file", "CENSUS3_QUERIES_FILE")
