@@ -3,6 +3,7 @@ package censusdb
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math/big"
 	"sync"
@@ -64,19 +65,31 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]arbo.Invalid, error) 
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
-	invalid, err := cr.tree.AddBatch(keys, values)
-	if err != nil {
-		return invalid, err
+	if len(keys) != len(values) {
+		return nil, fmt.Errorf("keys and values must have the same length: %d != %d", len(keys), len(values))
+	}
+
+	invalids := []arbo.Invalid{}
+	wtx := cr.tree.Database().WriteTx()
+	defer wtx.Discard()
+	// Iterate over keys and use Add() for each one
+	for i, key := range keys {
+		if err := cr.tree.AddWithTx(wtx, key, values[i]); err != nil {
+			invalids = append(invalids, arbo.Invalid{
+				Error: err,
+				Index: i,
+			})
+		}
 	}
 
 	// Update the current root
-	newRoot, err := cr.tree.Root()
+	newRoot, err := cr.tree.RootWithTx(wtx)
 	if err != nil {
-		return invalid, err
+		return invalids, fmt.Errorf("failed to get new root: %w", err)
 	}
 	cr.currentRoot = newRoot
 
-	return invalid, nil
+	return invalids, wtx.Commit()
 }
 
 // FetchKeysAndValues fetches all keys and values from the Merkle tree.

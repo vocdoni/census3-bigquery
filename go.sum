@@ -278,6 +278,8 @@ github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d h1:vfofYNRScrDd
 github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d/go.mod h1:RRCYJbIwD5jmqPI9XoAFR0OcDxqUctll6zUj/+B4S48=
 github.com/vocdoni/arbo v0.0.0-20250617181824-a9d4b8c0e936 h1:/haZrYvtxXhx1OaPE2QCFMtYxXTTjDlApcIcuvKvYBA=
 github.com/vocdoni/arbo v0.0.0-20250617181824-a9d4b8c0e936/go.mod h1:sFMKZZydnvuRqmO02ZBjtnD5Q/xn8s+Fp0KEFju2JJE=
+github.com/vocdoni/arbo v0.0.0-20250627001816-1f0789e5cbb8 h1:iTs6LUz+tjMJgwT4AhJet1HpIy8jA5Q8EjlNlyQTwB0=
+github.com/vocdoni/arbo v0.0.0-20250627001816-1f0789e5cbb8/go.mod h1:sFMKZZydnvuRqmO02ZBjtnD5Q/xn8s+Fp0KEFju2JJE=
 github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829 h1:r0g7M+d+VKyShoTSiYozaMPNqXYMwg30s0NtSaScwqI=
 github.com/vocdoni/davinci-node v0.0.0-20250612232803-98a2b4210829/go.mod h1:FyLpPfxoFMJLSLXcg4QUQrzFKy+Kz8fu2k75FUVtVFg=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
