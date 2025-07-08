@@ -360,6 +360,118 @@ func (s *KVSnapshotStorage) DeleteOldSnapshots(maxAge time.Duration) (int, error
 	return len(keysToDelete), nil
 }
 
+// DeleteOldSnapshotsByQuery removes snapshots for a specific query, keeping only the most recent N snapshots
+func (s *KVSnapshotStorage) DeleteOldSnapshotsByQuery(queryName string, keepCount int) (int, []types.HexBytes, error) {
+	if keepCount < 0 {
+		return 0, nil, fmt.Errorf("keepCount must be non-negative")
+	}
+
+	// Get all snapshots for this query
+	snapshots, err := s.SnapshotsByQuery(queryName)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to get snapshots for query %s: %w", queryName, err)
+	}
+
+	// If we have fewer snapshots than keepCount, nothing to delete
+	if len(snapshots) <= keepCount {
+		return 0, nil, nil
+	}
+
+	// Snapshots are already sorted by date (newest first) from SnapshotsByQuery
+	// We want to delete everything after index keepCount
+	snapshotsToDelete := snapshots[keepCount:]
+	var keysToDelete [][]byte
+	var censusRootsToDelete []types.HexBytes
+	var latestSnapshot *KVSnapshot
+
+	// If keepCount > 0, the latest snapshot to keep is at index keepCount-1
+	if keepCount > 0 {
+		latestSnapshot = &snapshots[keepCount-1]
+	}
+
+	// Collect keys and census roots to delete
+	for _, snapshot := range snapshotsToDelete {
+		key := s.generateSnapshotKey(snapshot.SnapshotDate, snapshot.MinBalance, snapshot.QueryName)
+		keysToDelete = append(keysToDelete, key)
+		censusRootsToDelete = append(censusRootsToDelete, snapshot.CensusRoot)
+	}
+
+	if len(keysToDelete) == 0 {
+		return 0, nil, nil
+	}
+
+	// Delete in transaction
+	wtx := s.db.WriteTx()
+	defer func() {
+		if wtx != nil {
+			wtx.Discard()
+		}
+	}()
+
+	for _, key := range keysToDelete {
+		if err := wtx.Delete(key); err != nil {
+			return 0, nil, fmt.Errorf("failed to delete snapshot: %w", err)
+		}
+	}
+
+	// Update metadata with the latest remaining snapshot for this query
+	if latestSnapshot != nil {
+		// Check if this query's latest snapshot is the overall latest
+		overallLatest, _ := s.LatestSnapshot()
+		if overallLatest != nil && overallLatest.QueryName == queryName {
+			// We're deleting snapshots from the query that has the overall latest snapshot
+			// Need to update the overall latest metadata
+			if err := s.forceUpdateMetadata(wtx, *latestSnapshot); err != nil {
+				return 0, nil, fmt.Errorf("failed to update metadata after deletion: %w", err)
+			}
+		}
+	} else if keepCount == 0 {
+		// All snapshots for this query are being deleted
+		// Check if we need to update the overall latest metadata
+		overallLatest, _ := s.LatestSnapshot()
+		if overallLatest != nil && overallLatest.QueryName == queryName {
+			// Find the latest snapshot from other queries
+			var newLatest *KVSnapshot
+			err := s.db.Iterate([]byte(snapshotPrefix), func(key, value []byte) bool {
+				var snapshot KVSnapshot
+				if err := gob.NewDecoder(bytes.NewReader(value)).Decode(&snapshot); err != nil {
+					return true // Continue iteration
+				}
+				if snapshot.QueryName != queryName {
+					if newLatest == nil || snapshot.SnapshotDate.After(newLatest.SnapshotDate) {
+						newLatest = &snapshot
+					}
+				}
+				return true
+			})
+			if err == nil && newLatest != nil {
+				if err := s.forceUpdateMetadata(wtx, *newLatest); err != nil {
+					return 0, nil, fmt.Errorf("failed to update metadata after deletion: %w", err)
+				}
+			} else {
+				// No other snapshots exist, delete the latest metadata
+				latestKey := []byte(metadataPrefix + "latest")
+				if err := wtx.Delete(latestKey); err != nil && err != db.ErrKeyNotFound {
+					return 0, nil, fmt.Errorf("failed to delete latest metadata: %w", err)
+				}
+			}
+		}
+	}
+
+	if err := wtx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("failed to commit deletion: %w", err)
+	}
+	wtx = nil // Prevent discard from being called
+
+	log.Info().
+		Str("query", queryName).
+		Int("deleted_count", len(keysToDelete)).
+		Int("keep_count", keepCount).
+		Msg("Deleted old snapshots for query")
+
+	return len(keysToDelete), censusRootsToDelete, nil
+}
+
 // Close closes the storage (if needed)
 func (s *KVSnapshotStorage) Close() error {
 	// The underlying database is managed externally

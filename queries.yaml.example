@@ -7,6 +7,7 @@ queries:
     query: ethereum_balances
     period: 1h
     decimals: 18
+    snapshotsToKeep: 24  # Keep only the 24 most recent snapshots
     parameters:
       min_balance: 1.0  # 1 ETH minimum
     weight:
@@ -20,6 +21,7 @@ queries:
     estimate_first: true
     cost_preset: "default"  # Simple cost control
     decimals: 18
+    snapshotsToKeep: 144  # Keep only the 144 most recent snapshots
     parameters:
       token_address: "0x59d1e836f7b7210a978b25a855085cc46fd090b5"
       min_balance: 20000
@@ -33,6 +35,7 @@ queries:
     period: 24h
     estimate_first: true
     cost_preset: "conservative"  # 1GB/$0.10 limits
+    snapshotsToKeep: 7  # Keep only the 7 most recent snapshots
     parameters:
       min_balance: 10.0
     weight:
@@ -45,6 +48,7 @@ queries:
     period: 2h
     estimate_first: true
     cost_preset: "high_volume"  # 1TB/$50 limits
+    # snapshotsToKeep: 0  # Default: keep all snapshots (unlimited)
     parameters:
       min_balance: 0.1
     weight:
@@ -212,3 +216,12 @@ queries:
 # estimate_first: true/false (optional, default: false)
 #   - Enables cost estimation before query execution
 #   - Recommended for all production queries
+#
+# snapshotsToKeep: integer (optional, default: 0 = unlimited)
+#   - Number of snapshots to retain for this query
+#   - When a new snapshot is created, older snapshots beyond this count are deleted
+#   - Set to 0 or omit to keep all snapshots (unlimited)
+#   - Examples:
+#     - snapshotsToKeep: 2 = Keep only the 2 most recent snapshots
+#     - snapshotsToKeep: 10 = Keep only the 10 most recent snapshots
+#     - snapshotsToKeep: 100 = Keep only the 100 most recent snapshots

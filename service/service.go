@@ -664,6 +664,54 @@ func (qr *QueryRunner) performSync() error {
 		Float64("min_balance", minBalance).
 		Msg("Snapshot stored successfully to KV storage")
 
+	// Step 9: Cleanup old snapshots if configured
+	snapshotsToKeep := qr.config.GetSnapshotsToKeep()
+	if snapshotsToKeep > 0 {
+		// Schedule cleanup in a goroutine to avoid blocking
+		go func() {
+			log.Info().
+				Str("query", queryID).
+				Int("snapshots_to_keep", snapshotsToKeep).
+				Msg("Starting cleanup of old snapshots")
+
+			deletedCount, censusRootsToDelete, err := qr.service.kvStorage.DeleteOldSnapshotsByQuery(queryID, snapshotsToKeep)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("query", queryID).
+					Msg("Failed to delete old snapshots")
+				return
+			}
+
+			if deletedCount > 0 {
+				log.Info().
+					Str("query", queryID).
+					Int("deleted_snapshots", deletedCount).
+					Int("snapshots_kept", snapshotsToKeep).
+					Msg("Successfully deleted old snapshots")
+
+				// Delete the associated census data
+				for _, censusRoot := range censusRootsToDelete {
+					if qr.service.censusDB.ExistsByRoot(censusRoot) {
+						censusID := uuid.NewSHA1(uuid.NameSpaceOID, censusRoot)
+						if err := qr.service.censusDB.Del(censusID); err != nil {
+							log.Error().
+								Err(err).
+								Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+								Str("query", queryID).
+								Msg("Failed to delete census data for old snapshot")
+						} else {
+							log.Debug().
+								Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+								Str("query", queryID).
+								Msg("Deleted census data for old snapshot")
+						}
+					}
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -808,6 +856,65 @@ func (s *Service) synchronizeQueries() error {
 
 		// Compare configurations and log differences
 		s.logConfigurationChanges(&queryConfig, latest)
+
+		// Check if we need to cleanup old snapshots based on current configuration
+		snapshotsToKeep := queryConfig.GetSnapshotsToKeep()
+		if snapshotsToKeep > 0 {
+			// Get all snapshots for this query to check if we have too many
+			snapshots, err := s.kvStorage.SnapshotsByQuery(queryConfig.Name)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Str("query", queryConfig.Name).
+					Msg("Failed to get snapshots for cleanup check")
+				continue
+			}
+
+			if len(snapshots) > snapshotsToKeep {
+				log.Info().
+					Str("query", queryConfig.Name).
+					Int("current_count", len(snapshots)).
+					Int("snapshots_to_keep", snapshotsToKeep).
+					Msg("Query has more snapshots than configured limit, cleaning up")
+
+				// Perform cleanup
+				deletedCount, censusRootsToDelete, err := s.kvStorage.DeleteOldSnapshotsByQuery(queryConfig.Name, snapshotsToKeep)
+				if err != nil {
+					log.Error().
+						Err(err).
+						Str("query", queryConfig.Name).
+						Msg("Failed to delete old snapshots during startup cleanup")
+					continue
+				}
+
+				if deletedCount > 0 {
+					log.Info().
+						Str("query", queryConfig.Name).
+						Int("deleted_snapshots", deletedCount).
+						Int("snapshots_kept", snapshotsToKeep).
+						Msg("Successfully deleted old snapshots during startup cleanup")
+
+					// Delete the associated census data
+					for _, censusRoot := range censusRootsToDelete {
+						if s.censusDB.ExistsByRoot(censusRoot) {
+							censusID := uuid.NewSHA1(uuid.NameSpaceOID, censusRoot)
+							if err := s.censusDB.Del(censusID); err != nil {
+								log.Error().
+									Err(err).
+									Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+									Str("query", queryConfig.Name).
+									Msg("Failed to delete census data for old snapshot during startup cleanup")
+							} else {
+								log.Debug().
+									Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+									Str("query", queryConfig.Name).
+									Msg("Deleted census data for old snapshot during startup cleanup")
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil

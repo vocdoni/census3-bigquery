@@ -42,18 +42,19 @@ type BigQueryPricing struct {
 
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
-	Name          string                 `yaml:"name" json:"name"`                           // User-defined name for this query instance
-	Source        *string                `yaml:"source,omitempty" json:"source,omitempty"`   // Data source: "bigquery" or "alchemy" (defaults to "bigquery")
-	Query         string                 `yaml:"query" json:"query"`                         // Query name from registry
-	Network       *string                `yaml:"network,omitempty" json:"network,omitempty"` // Network for Alchemy queries (e.g., "base-mainnet")
-	Period        time.Duration          `yaml:"period" json:"period"`
-	Disabled      *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
-	SyncOnStart   *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
-	Decimals      *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"`       // Token decimals (18 for ETH, 6 for USDC, etc.)
-	Parameters    map[string]interface{} `yaml:"parameters" json:"parameters"`
-	Weight        *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
-	EstimateFirst *bool                  `yaml:"estimate_first,omitempty" json:"estimate_first,omitempty"` // Whether to estimate query cost before execution
-	CostPreset    *string                `yaml:"cost_preset,omitempty" json:"cost_preset,omitempty"`       // Simple cost preset: "conservative", "default", "high_volume", "none"
+	Name            string                 `yaml:"name" json:"name"`                           // User-defined name for this query instance
+	Source          *string                `yaml:"source,omitempty" json:"source,omitempty"`   // Data source: "bigquery" or "alchemy" (defaults to "bigquery")
+	Query           string                 `yaml:"query" json:"query"`                         // Query name from registry
+	Network         *string                `yaml:"network,omitempty" json:"network,omitempty"` // Network for Alchemy queries (e.g., "base-mainnet")
+	Period          time.Duration          `yaml:"period" json:"period"`
+	Disabled        *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
+	SyncOnStart     *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
+	Decimals        *int                   `yaml:"decimals,omitempty" json:"decimals,omitempty"`       // Token decimals (18 for ETH, 6 for USDC, etc.)
+	Parameters      map[string]interface{} `yaml:"parameters" json:"parameters"`
+	Weight          *WeightConfig          `yaml:"weight,omitempty" json:"weight,omitempty"`
+	EstimateFirst   *bool                  `yaml:"estimate_first,omitempty" json:"estimate_first,omitempty"`   // Whether to estimate query cost before execution
+	CostPreset      *string                `yaml:"cost_preset,omitempty" json:"cost_preset,omitempty"`         // Simple cost preset: "conservative", "default", "high_volume", "none"
+	SnapshotsToKeep *int                   `yaml:"snapshotsToKeep,omitempty" json:"snapshotsToKeep,omitempty"` // Number of snapshots to keep (0 = unlimited)
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -239,6 +240,11 @@ func (c *Config) loadQueries() error {
 			}
 		}
 
+		// Validate snapshotsToKeep if provided
+		if query.SnapshotsToKeep != nil && *query.SnapshotsToKeep < 0 {
+			return fmt.Errorf("query %d (%s): snapshotsToKeep must be non-negative", i+1, query.Name)
+		}
+
 		// Update the query in the slice
 		queriesFile.Queries[i] = query
 	}
@@ -363,6 +369,14 @@ func (qc *QueryConfig) GetBigQueryPricing() *BigQueryPricing {
 	return &BigQueryPricing{
 		PricePerTBProcessed: DefaultBigQueryPricePerTB,
 	}
+}
+
+// GetSnapshotsToKeep returns the number of snapshots to keep (0 = unlimited)
+func (qc *QueryConfig) GetSnapshotsToKeep() int {
+	if qc.SnapshotsToKeep != nil && *qc.SnapshotsToKeep >= 0 {
+		return *qc.SnapshotsToKeep
+	}
+	return 0 // Default: keep all snapshots
 }
 
 // ValidateWeightConfig validates the weight configuration
