@@ -86,6 +86,80 @@ queries:
       strategy: "constant"
       constant_weight: 1
 
+# ========== ALCHEMY QUERIES ==========
+# The following examples demonstrate how to use Alchemy as a data source
+
+# Example 8: NFT holders from Alchemy (Base network)
+  - name: base_nft_holders
+    source: alchemy  # Specify Alchemy as the data source
+    query: nft_holders
+    network: base-mainnet  # Required for Alchemy queries
+    period: 30m
+    parameters:
+      contract_address: "0x85E7DF5708902bE39891d59aBEf8E21EDE91E8BF"  # NFT contract
+      min_balance: 1  # Minimum NFT count
+    weight:
+      strategy: "constant"
+      constant_weight: 1  # Equal voting for all NFT holders
+
+# Example 9: NFT holders with proportional voting (Ethereum)
+  - name: eth_nft_proportional
+    source: alchemy
+    query: nft_holders
+    network: eth-mainnet
+    period: 1h
+    parameters:
+      contract_address: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D"  # BAYC
+      min_balance: 1
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1  # 1 NFT = 1 point, 10 NFTs = 10 points
+      max_weight: 100  # Cap at 100 points
+
+# Example 10: NFT holders on Polygon
+  - name: polygon_nft_holders
+    source: alchemy
+    query: nft_holders
+    network: polygon-mainnet
+    period: 2h
+    parameters:
+      contract_address: "0x7227e371540CF7b8e512544Ba6871472031F3335"  # Polygon NFT
+      min_balance: 1
+    weight:
+      strategy: "proportional_manual"
+      multiplier: 10  # Each NFT = 10 points
+
+# Example 11: Haberdashery - Combined holders of two Base NFTs
+  - name: haberdashery
+    source: alchemy
+    query: multi_nft_holders
+    network: base-mainnet
+    period: 4h
+    parameters:
+      contract_addresses:
+        - "0x85E7DF5708902bE39891d59aBEf8E21EDE91E8BF"  # Base NFT 1
+        - "0x980Fbdd1cF05080781Dca0AEf7026B0406743389"  # Base NFT 2
+      min_balance: 1  # Must hold at least 1 NFT from either collection
+    weight:
+      strategy: "proportional_auto"
+      target_min_weight: 1  # 1 NFT = 1 point, accumulates across both contracts
+      max_weight: 50  # Cap at 50 points to prevent excessive concentration
+
+# Example 12: Multiple NFT contracts on Ethereum (template)
+  # - name: multi_eth_nft_holders
+  #   source: alchemy
+  #   query: multi_nft_holders
+  #   network: eth-mainnet
+  #   period: 4h
+  #   parameters:
+  #     contract_addresses:
+  #       - "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D"  # BAYC
+  #       - "0x60E4d786628Fea6478F785A6d7e704777c86a7c6"  # MAYC
+  #     min_balance: 1
+  #   weight:
+  #     strategy: "constant"
+  #     constant_weight: 1
+
 # Cost Preset Options:
 #
 # "conservative" - Safe for development/testing

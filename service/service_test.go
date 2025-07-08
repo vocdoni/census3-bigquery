@@ -107,7 +107,7 @@ func TestQueryRunnerStreamAndCreateCensus(t *testing.T) {
 		QueryParams: queryConfig.Parameters,
 	}
 
-	count, err := queryRunner.streamAndCreateCensus(censusRef, bqConfig)
+	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
 	c.Assert(err, quicktest.IsNil)
 	c.Assert(count, quicktest.Equals, len(testParticipants))
 
@@ -179,7 +179,7 @@ func TestQueryRunnerStreamAndCreateCensusWithLargeBatch(t *testing.T) {
 	}
 
 	start := time.Now()
-	count, err := queryRunner.streamAndCreateCensus(censusRef, bqConfig)
+	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
 	elapsed := time.Since(start)
 
 	c.Assert(err, quicktest.IsNil)
@@ -264,7 +264,7 @@ func TestQueryRunnerStreamAndCreateCensusContextCancellation(t *testing.T) {
 		QueryParams: queryConfig.Parameters,
 	}
 
-	_, err = queryRunner.streamAndCreateCensus(censusRef, bqConfig)
+	_, err = queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
 	c.Assert(err, quicktest.Not(quicktest.IsNil))
 	c.Assert(err.Error(), quicktest.Contains, "context cancelled")
 }

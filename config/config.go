@@ -42,8 +42,10 @@ type BigQueryPricing struct {
 
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
-	Name          string                 `yaml:"name" json:"name"`   // User-defined name for this query instance
-	Query         string                 `yaml:"query" json:"query"` // BigQuery query name from registry
+	Name          string                 `yaml:"name" json:"name"`                           // User-defined name for this query instance
+	Source        *string                `yaml:"source,omitempty" json:"source,omitempty"`   // Data source: "bigquery" or "alchemy" (defaults to "bigquery")
+	Query         string                 `yaml:"query" json:"query"`                         // Query name from registry
+	Network       *string                `yaml:"network,omitempty" json:"network,omitempty"` // Network for Alchemy queries (e.g., "base-mainnet")
 	Period        time.Duration          `yaml:"period" json:"period"`
 	Disabled      *bool                  `yaml:"disabled,omitempty" json:"disabled,omitempty"`       // Disables synchronization but keeps existing snapshots accessible
 	SyncOnStart   *bool                  `yaml:"syncOnStart,omitempty" json:"syncOnStart,omitempty"` // If false, respects period timing; if true, syncs immediately on startup
@@ -76,6 +78,9 @@ type Config struct {
 
 	// Internal fields
 	QueriesFile string `mapstructure:"queries-file"`
+
+	// Alchemy configuration
+	AlchemyAPIKey string `mapstructure:"alchemy-api-key"`
 }
 
 // Load loads configuration from flags, environment variables, and YAML file
@@ -103,8 +108,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("max-census-size", 1000000)
 	viper.SetDefault("queries-file", "./queries.yaml")
 
+	// Add Alchemy API key flag
+	pflag.String("alchemy-api-key", "", "Alchemy API key for Web3 queries")
+
 	// Bind flags to viper
-	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file"} {
+	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file", "alchemy-api-key"} {
 		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
 			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
 		}
@@ -122,6 +130,7 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
 	_ = viper.BindEnv("max-census-size", "CENSUS3_MAX_CENSUS_SIZE")
 	_ = viper.BindEnv("queries-file", "CENSUS3_QUERIES_FILE")
+	_ = viper.BindEnv("alchemy-api-key", "ALCHEMY_API_KEY")
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
@@ -133,9 +142,27 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to load queries: %w", err)
 	}
 
-	// Validate required fields
-	if cfg.Project == "" {
-		return nil, fmt.Errorf("project is required")
+	// Validate required fields based on query sources
+	hasBigQuery := false
+	hasAlchemy := false
+
+	for _, query := range cfg.Queries {
+		switch query.GetSource() {
+		case "bigquery":
+			hasBigQuery = true
+		case "alchemy":
+			hasAlchemy = true
+		}
+	}
+
+	// Only require project if we have BigQuery queries
+	if hasBigQuery && cfg.Project == "" {
+		return nil, fmt.Errorf("project is required for BigQuery queries")
+	}
+
+	// Require Alchemy API key if we have Alchemy queries
+	if hasAlchemy && cfg.AlchemyAPIKey == "" {
+		return nil, fmt.Errorf("alchemy-api-key is required for Alchemy queries (set via --alchemy-api-key flag or ALCHEMY_API_KEY env var)")
 	}
 
 	if len(cfg.Queries) == 0 {
@@ -197,12 +224,43 @@ func (c *Config) loadQueries() error {
 			}
 		}
 
+		// Validate source-specific requirements
+		source := query.GetSource()
+		if source == "alchemy" {
+			// Validate network for Alchemy queries
+			if query.Network == nil || *query.Network == "" {
+				return fmt.Errorf("query %d (%s): network is required for Alchemy queries", i+1, query.Name)
+			}
+			// Validate contract_address parameter for NFT queries
+			if query.Query == "nft_holders" || query.Query == "nft_holders_with_metadata" {
+				if _, hasContractAddress := query.Parameters["contract_address"]; !hasContractAddress {
+					return fmt.Errorf("query %d (%s): contract_address parameter is required for NFT queries", i+1, query.Name)
+				}
+			}
+		}
+
 		// Update the query in the slice
 		queriesFile.Queries[i] = query
 	}
 
 	c.Queries = queriesFile.Queries
 	return nil
+}
+
+// GetSource returns the data source with default "bigquery"
+func (qc *QueryConfig) GetSource() string {
+	if qc.Source != nil && *qc.Source != "" {
+		return *qc.Source
+	}
+	return "bigquery" // Default source
+}
+
+// GetNetwork returns the network name for Alchemy queries
+func (qc *QueryConfig) GetNetwork() string {
+	if qc.Network != nil {
+		return *qc.Network
+	}
+	return ""
 }
 
 // GetQueryID returns a unique identifier for a query configuration

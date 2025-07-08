@@ -6,8 +6,10 @@ A service that automatically creates Ethereum census snapshots by querying BigQu
 
 - **YAML-Based Query Configuration**: Flexible query management with user-defined names and independent scheduling
 - **Multiple Query Support**: Run multiple queries simultaneously with different parameters and periods
-- **Automated Snapshots**: Periodic creation of census snapshots from Ethereum balance data
-- **Modular BigQuery System**: Choose from multiple predefined queries or add custom ones
+- **Multiple Data Sources**: Support for both Google BigQuery and Alchemy Web3 APIs
+- **NFT Support**: Query NFT holders across all Alchemy-supported networks
+- **Automated Snapshots**: Periodic creation of census snapshots from blockchain data
+- **Modular Query System**: Choose from multiple predefined queries or add custom ones
 - **HTTP API**: RESTful API for accessing snapshots and census data
 
 ## Configuration
@@ -79,6 +81,19 @@ The service uses a YAML configuration file to define multiple queries with indep
        weight:
          strategy: "constant"
          constant_weight: 1  # Equal voting for all active users
+         
+     # NFT holders from Alchemy (Base network)
+     - name: base_nft_holders
+       source: alchemy  # Specify Alchemy as the data source
+       query: nft_holders
+       network: base-mainnet  # Required for Alchemy queries
+       period: 30m
+       parameters:
+         contract_address: "0x85E7DF5708902bE39891d59aBEf8E21EDE91E8BF"
+         min_balance: 1  # Minimum NFT count
+       weight:
+         strategy: "constant"
+         constant_weight: 1  # Equal voting for all NFT holders
    ```
 
 Use `--list-queries` to see all available queries:
@@ -90,13 +105,15 @@ go run ./cmd/service --list-queries
 #### Query Configuration Fields
 
 - **`name`**: User-defined identifier for this query instance (used in logs and API responses)
-- **`query`**: BigQuery query name from the registry (must exist in `bigquery/queries.go`)
+- **`source`**: Data source - either `bigquery` or `alchemy` (defaults to `bigquery`)
+- **`query`**: Query name from the appropriate registry
+- **`network`**: Network name for Alchemy queries (e.g., `eth-mainnet`, `base-mainnet`)
 - **`period`**: How often to run this query (e.g., `1h`, `30m`, `2h`)
 - **`disabled`**: Optional boolean to disable synchronization while keeping existing snapshots accessible (default: false)
 - **`syncOnStart`**: Optional boolean to control startup sync behavior (default: false)
-- **`decimals`**: Token decimals for conversion (18 for ETH, 6 for USDC, etc.) - optional with smart defaults
-- **`parameters`**: Query-specific parameters including `min_balance` in human-readable units
-- **`weight`**: Weight calculation configuration for census creation - optional, defaults to proportional_manual with multiplier 100
+- **`decimals`**: Token decimals for conversion - optional with smart defaults
+- **`parameters`**: Query-specific parameters including `min_balance` and `contract_address`
+- **`weight`**: Weight calculation configuration for census creation
 
 
 #### Weight Configuration Strategies
@@ -392,6 +409,62 @@ curl -X POST http://localhost:8080/censuses/$CENSUS_ID/publish
 # 5. Generate proof using published census
 curl "http://localhost:8080/censuses/$ROOT/proof?key=0x742d35Cc6634C0532925a3b8D4C9db96"
 ```
+
+## Alchemy Configuration
+
+To use Alchemy as a data source for NFT and token queries:
+
+1. **Get an Alchemy API Key**:
+   - Sign up at [https://www.alchemy.com/](https://www.alchemy.com/)
+   - Create a new app for each network you want to use
+   - Copy your API key
+
+2. **Set the API Key**:
+   ```bash
+   # Using environment variable
+   export ALCHEMY_API_KEY=your-api-key-here
+   
+   # Or in .env file
+   ALCHEMY_API_KEY=your-api-key-here
+   ```
+
+3. **Configure Alchemy Queries**:
+   ```yaml
+   queries:
+     - name: base_nft_holders
+       source: alchemy
+       query: nft_holders
+       network: base-mainnet
+       period: 30m
+       parameters:
+         contract_address: "0x85E7DF5708902bE39891d59aBEf8E21EDE91E8BF"
+         min_balance: 1
+       weight:
+         strategy: "constant"
+         constant_weight: 1
+   ```
+
+### Supported Alchemy Networks
+
+- `eth-mainnet` - Ethereum Mainnet
+- `eth-sepolia` - Ethereum Sepolia Testnet
+- `polygon-mainnet` - Polygon (Matic) Mainnet
+- `polygon-amoy` - Polygon Amoy Testnet
+- `arb-mainnet` - Arbitrum One
+- `arb-sepolia` - Arbitrum Sepolia
+- `opt-mainnet` - Optimism Mainnet
+- `opt-sepolia` - Optimism Sepolia
+- `base-mainnet` - Base Mainnet
+- `base-sepolia` - Base Sepolia
+- `blast-mainnet` - Blast Mainnet
+- `blast-sepolia` - Blast Sepolia
+- And more...
+
+### Available Alchemy Queries
+
+- **`nft_holders`**: Get all holders of a specific NFT contract
+  - Parameters: `contract_address`, `min_balance`
+  - Returns holders with their NFT count as balance
 
 ## Step-by-step setup with Google Cloud configuration
 

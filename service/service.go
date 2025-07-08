@@ -16,6 +16,7 @@ import (
 	"go.vocdoni.io/dvote/db"
 	"go.vocdoni.io/dvote/db/metadb"
 
+	"census3-bigquery/alchemy"
 	"census3-bigquery/api"
 	"census3-bigquery/bigquery"
 	"census3-bigquery/censusdb"
@@ -24,10 +25,21 @@ import (
 	"census3-bigquery/storage"
 )
 
+// DataSourceClient interface for data source operations (BigQuery or Alchemy)
+type DataSourceClient interface {
+	Close() error
+}
+
 // BigQueryClient interface for BigQuery operations
 type BigQueryClient interface {
+	DataSourceClient
 	StreamBalances(ctx context.Context, cfg bigquery.Config, participantCh chan<- bigquery.Participant, errorCh chan<- error)
-	Close() error
+}
+
+// AlchemyClient interface for Alchemy operations
+type AlchemyClient interface {
+	DataSourceClient
+	StreamBalances(ctx context.Context, cfg alchemy.Config, participantCh chan<- alchemy.Participant, errorCh chan<- error)
 }
 
 // Default batch size for census creation - configurable
@@ -46,6 +58,7 @@ type Service struct {
 	config         *config.Config
 	kvStorage      *storage.KVSnapshotStorage
 	bigqueryClient BigQueryClient
+	alchemyClient  AlchemyClient
 	censusDB       *censusdb.CensusDB
 	apiServer      *api.Server
 	ctx            context.Context
@@ -60,17 +73,58 @@ func New(cfg *config.Config) (*Service, error) {
 	startTime := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize BigQuery client
-	log.Info().Msg("Creating BigQuery client...")
-	bqStartTime := time.Now()
-	bqClient, err := bigquery.NewClient(ctx, cfg.Project)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to create BigQuery client: %w", err)
+	// Initialize BigQuery client if needed
+	var bqClient BigQueryClient
+	hasBigQueryQueries := false
+	for _, query := range cfg.Queries {
+		if query.GetSource() == "bigquery" {
+			hasBigQueryQueries = true
+			break
+		}
 	}
-	log.Info().
-		Str("duration", time.Since(bqStartTime).String()).
-		Msg("BigQuery client created successfully")
+
+	if hasBigQueryQueries {
+		log.Info().Msg("Creating BigQuery client...")
+		bqStartTime := time.Now()
+		client, err := bigquery.NewClient(ctx, cfg.Project)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create BigQuery client: %w", err)
+		}
+		bqClient = client
+		log.Info().
+			Str("duration", time.Since(bqStartTime).String()).
+			Msg("BigQuery client created successfully")
+	}
+
+	// Initialize Alchemy client if needed
+	var alchemyClient AlchemyClient
+	hasAlchemyQueries := false
+	for _, query := range cfg.Queries {
+		if query.GetSource() == "alchemy" {
+			hasAlchemyQueries = true
+			break
+		}
+	}
+
+	if hasAlchemyQueries {
+		log.Info().Msg("Creating Alchemy client...")
+		alchemyStartTime := time.Now()
+		client, err := alchemy.NewClient(ctx, cfg.AlchemyAPIKey)
+		if err != nil {
+			cancel()
+			if bqClient != nil {
+				if closeErr := bqClient.Close(); closeErr != nil {
+					log.Warn().Err(closeErr).Msg("Failed to close BigQuery client")
+				}
+			}
+			return nil, fmt.Errorf("failed to create Alchemy client: %w", err)
+		}
+		alchemyClient = client
+		log.Info().
+			Str("duration", time.Since(alchemyStartTime).String()).
+			Msg("Alchemy client created successfully")
+	}
 
 	// Initialize shared database for both census and snapshots
 	log.Info().
@@ -93,8 +147,15 @@ func New(cfg *config.Config) (*Service, error) {
 	database, err := metadb.New(db.TypePebble, dataDir)
 	if err != nil {
 		cancel()
-		if closeErr := bqClient.Close(); closeErr != nil {
-			log.Warn().Err(closeErr).Msg("Failed to close BigQuery client")
+		if bqClient != nil {
+			if closeErr := bqClient.Close(); closeErr != nil {
+				log.Warn().Err(closeErr).Msg("Failed to close BigQuery client")
+			}
+		}
+		if alchemyClient != nil {
+			if closeErr := alchemyClient.Close(); closeErr != nil {
+				log.Warn().Err(closeErr).Msg("Failed to close Alchemy client")
+			}
 		}
 		return nil, fmt.Errorf("failed to create database: %w", err)
 	}
@@ -153,6 +214,7 @@ func New(cfg *config.Config) (*Service, error) {
 		config:         cfg,
 		kvStorage:      kvStorage,
 		bigqueryClient: bqClient,
+		alchemyClient:  alchemyClient,
 		censusDB:       censusDB,
 		apiServer:      apiServer,
 		ctx:            ctx,
@@ -195,10 +257,22 @@ func New(cfg *config.Config) (*Service, error) {
 func (s *Service) createQueryRunner(queryConfig *config.QueryConfig) (*QueryRunner, error) {
 	ctx, cancel := context.WithCancel(s.ctx)
 
-	// Validate that the query exists in the registry
-	if _, err := bigquery.GetQuery(queryConfig.Query); err != nil {
+	// Validate that the query exists in the appropriate registry
+	source := queryConfig.GetSource()
+	switch source {
+	case "bigquery":
+		if _, err := bigquery.GetQuery(queryConfig.Query); err != nil {
+			cancel()
+			return nil, fmt.Errorf("invalid BigQuery query '%s' for config '%s': %w", queryConfig.Query, queryConfig.Name, err)
+		}
+	case "alchemy":
+		if _, err := alchemy.GetQuery(queryConfig.Query); err != nil {
+			cancel()
+			return nil, fmt.Errorf("invalid Alchemy query '%s' for config '%s': %w", queryConfig.Query, queryConfig.Name, err)
+		}
+	default:
 		cancel()
-		return nil, fmt.Errorf("invalid query '%s' for config '%s': %w", queryConfig.Query, queryConfig.Name, err)
+		return nil, fmt.Errorf("unknown source '%s' for config '%s'", source, queryConfig.Name)
 	}
 
 	return &QueryRunner{
@@ -294,8 +368,16 @@ func (s *Service) Stop() {
 	s.cancel()
 	s.wg.Wait()
 
-	if err := s.bigqueryClient.Close(); err != nil {
-		log.Error().Err(err).Msg("Error closing BigQuery client")
+	if s.bigqueryClient != nil {
+		if err := s.bigqueryClient.Close(); err != nil {
+			log.Error().Err(err).Msg("Error closing BigQuery client")
+		}
+	}
+
+	if s.alchemyClient != nil {
+		if err := s.alchemyClient.Close(); err != nil {
+			log.Error().Err(err).Msg("Error closing Alchemy client")
+		}
 	}
 
 	log.Info().Msg("Service stopped")
@@ -414,24 +496,52 @@ func (qr *QueryRunner) performSync() error {
 		return fmt.Errorf("failed to create new census for query %s: %w", queryID, err)
 	}
 
-	// Step 2: Stream data from BigQuery and create census
+	// Step 2: Stream data from data source and create census
+	source := qr.config.GetSource()
 	log.Info().
 		Str("query", queryID).
-		Msg("Streaming data from BigQuery and creating census...")
+		Str("source", source).
+		Msg("Streaming data from data source and creating census...")
 
-	bqConfig := bigquery.Config{
-		Project:         qr.service.config.Project,
-		MinBalance:      minBalance, // For backward compatibility with bigquery.Config
-		QueryName:       qr.config.Query,
-		QueryParams:     qr.config.Parameters,
-		Decimals:        qr.config.GetDecimals(),
-		WeightConfig:    convertWeightConfig(qr.config.GetWeightConfig()),
-		EstimateFirst:   qr.config.GetEstimateFirst(),
-		CostPreset:      qr.config.GetCostPreset(),
-		BigQueryPricing: convertBigQueryPricing(qr.config.GetBigQueryPricing()),
+	var actualCount int
+
+	switch source {
+	case "bigquery":
+		bqConfig := bigquery.Config{
+			Project:         qr.service.config.Project,
+			MinBalance:      minBalance,
+			QueryName:       qr.config.Query,
+			QueryParams:     qr.config.Parameters,
+			Decimals:        qr.config.GetDecimals(),
+			WeightConfig:    convertWeightConfig(qr.config.GetWeightConfig()),
+			EstimateFirst:   qr.config.GetEstimateFirst(),
+			CostPreset:      qr.config.GetCostPreset(),
+			BigQueryPricing: convertBigQueryPricing(qr.config.GetBigQueryPricing()),
+		}
+		actualCount, err = qr.streamAndCreateCensusBigQuery(censusRef, bqConfig)
+	case "alchemy":
+		// Get contract address from parameters
+		contractAddress := ""
+		if addr, ok := qr.config.Parameters["contract_address"]; ok {
+			contractAddress = fmt.Sprintf("%v", addr)
+		}
+
+		// For multi_nft_holders, pass all parameters including contract_addresses
+		alchemyConfig := alchemy.Config{
+			APIKey:          qr.service.config.AlchemyAPIKey,
+			Network:         qr.config.GetNetwork(),
+			ContractAddress: contractAddress,
+			MinBalance:      minBalance,
+			QueryName:       qr.config.Query,
+			QueryParams:     qr.config.Parameters, // This includes contract_addresses for multi queries
+			WeightConfig:    convertAlchemyWeightConfig(qr.config.GetWeightConfig()),
+			PageSize:        100, // Default page size
+		}
+		actualCount, err = qr.streamAndCreateCensusAlchemy(censusRef, alchemyConfig)
+	default:
+		return fmt.Errorf("unknown source '%s' for query %s", source, queryID)
 	}
 
-	actualCount, err := qr.streamAndCreateCensus(censusRef, bqConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create census for query %s: %w", queryID, err)
 	}
@@ -518,6 +628,22 @@ func (qr *QueryRunner) performSync() error {
 		MaxWeight:       weightConfig.MaxWeight,
 	}
 
+	// Sanitize parameters to convert []interface{} to concrete types for Gob encoding
+	sanitizedParams := make(map[string]interface{})
+	for k, v := range qr.config.Parameters {
+		switch val := v.(type) {
+		case []interface{}:
+			// Convert []interface{} to []string
+			strSlice := make([]string, len(val))
+			for i, item := range val {
+				strSlice[i] = fmt.Sprintf("%v", item)
+			}
+			sanitizedParams[k] = strSlice
+		default:
+			sanitizedParams[k] = v
+		}
+	}
+
 	if err := qr.service.kvStorage.AddSnapshot(
 		snapshotDate,
 		rootHex,
@@ -527,7 +653,7 @@ func (qr *QueryRunner) performSync() error {
 		qr.config.Query,
 		qr.config.GetDecimals(),
 		qr.config.Period.String(),
-		qr.config.Parameters,
+		sanitizedParams,
 		storageWeightConfig,
 	); err != nil {
 		return fmt.Errorf("failed to store snapshot for query %s: %w", queryID, err)
@@ -541,8 +667,8 @@ func (qr *QueryRunner) performSync() error {
 	return nil
 }
 
-// streamAndCreateCensus streams participants from BigQuery and creates census in batches
-func (qr *QueryRunner) streamAndCreateCensus(censusRef *censusdb.CensusRef, bqConfig bigquery.Config) (int, error) {
+// streamAndCreateCensusBigQuery streams participants from BigQuery and creates census in batches
+func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusRef, bqConfig bigquery.Config) (int, error) {
 	// Determine batch size
 	batchSize := qr.service.config.BatchSize
 	if batchSize <= 0 {
@@ -785,6 +911,127 @@ func convertBigQueryPricing(cfg *config.BigQueryPricing) *bigquery.BigQueryPrici
 	}
 	return &bigquery.BigQueryPricing{
 		PricePerTBProcessed: cfg.PricePerTBProcessed,
+	}
+}
+
+// streamAndCreateCensusAlchemy streams participants from Alchemy and creates census in batches
+func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRef, alchemyConfig alchemy.Config) (int, error) {
+	// Determine batch size
+	batchSize := qr.service.config.BatchSize
+	if batchSize <= 0 {
+		batchSize = DefaultBatchSize
+	}
+
+	// Create channels for streaming
+	participantCh := make(chan alchemy.Participant, batchSize)
+	errorCh := make(chan error, 1)
+
+	// Start Alchemy streaming in a goroutine
+	go qr.service.alchemyClient.StreamBalances(qr.ctx, alchemyConfig, participantCh, errorCh)
+
+	// Process participants in batches
+	var totalProcessed int
+	var batch [][]byte
+	var values [][]byte
+	startTime := time.Now()
+	lastLogTime := startTime
+	queryID := qr.config.Name
+
+	for {
+		select {
+		case participant, ok := <-participantCh:
+			if !ok {
+				// Channel closed, process final batch if any
+				if len(batch) > 0 {
+					if _, err := censusRef.InsertBatch(batch, values); err != nil {
+						return totalProcessed, fmt.Errorf("failed to insert final batch: %w", err)
+					}
+					totalProcessed += len(batch)
+				}
+
+				elapsed := time.Since(startTime)
+				rate := float64(totalProcessed) / elapsed.Seconds()
+				log.Info().
+					Int("total_processed", totalProcessed).
+					Str("elapsed", elapsed.String()).
+					Float64("addr_per_sec", rate).
+					Str("query", queryID).
+					Msg("Census creation completed")
+
+				return totalProcessed, nil
+			}
+
+			// Hash the address key for the census
+			addressKey := participant.Address.Bytes()
+
+			if addressKey == nil {
+				log.Warn().
+					Str("address", participant.Address.Hex()).
+					Str("query", queryID).
+					Msg("Failed to hash address key, skipping")
+				continue
+			}
+
+			if len(addressKey) > types.CensusKeyMaxLen {
+				log.Warn().
+					Str("address", participant.Address.Hex()).
+					Str("query", queryID).
+					Msg("Address key length exceeded, skipping")
+				continue
+			}
+
+			// Convert balance to bytes
+			balanceBytes := arbo.BigIntToBytes(censusRef.Tree().HashFunction().Len(), participant.Balance)
+
+			// Add to current batch
+			batch = append(batch, addressKey)
+			values = append(values, balanceBytes)
+
+			// Process batch when it reaches the configured size
+			if len(batch) >= batchSize {
+				if _, err := censusRef.InsertBatch(batch, values); err != nil {
+					return totalProcessed, fmt.Errorf("failed to insert batch: %w", err)
+				}
+				totalProcessed += len(batch)
+
+				// Log progress every 10 seconds
+				currentTime := time.Now()
+				if currentTime.Sub(lastLogTime) >= 10*time.Second {
+					elapsed := currentTime.Sub(startTime)
+					rate := float64(totalProcessed) / elapsed.Seconds()
+					log.Info().
+						Int("processed", totalProcessed).
+						Str("elapsed", elapsed.String()).
+						Float64("addr_per_sec", rate).
+						Str("query", queryID).
+						Msg("Census creation progress")
+					lastLogTime = currentTime
+				}
+
+				// Reset batch
+				batch = [][]byte{}
+				values = [][]byte{}
+			}
+
+		case err := <-errorCh:
+			if err != nil {
+				return totalProcessed, fmt.Errorf("Alchemy streaming error: %w", err)
+			}
+
+		case <-qr.ctx.Done():
+			return totalProcessed, fmt.Errorf("context cancelled during census creation")
+		}
+	}
+}
+
+// convertAlchemyWeightConfig converts config.WeightConfig to alchemy.WeightConfig
+func convertAlchemyWeightConfig(cfg config.WeightConfig) alchemy.WeightConfig {
+	return alchemy.WeightConfig{
+		Strategy:        cfg.Strategy,
+		ConstantWeight:  cfg.ConstantWeight,
+		TargetMinWeight: cfg.TargetMinWeight,
+		Multiplier:      cfg.Multiplier,
+		MaxWeight:       cfg.MaxWeight,
 	}
 }
 
