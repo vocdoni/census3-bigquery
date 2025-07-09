@@ -494,10 +494,10 @@ func GenerateCSVFileName() string {
 // NewDefaultCostThresholds returns cost thresholds optimized for typical usage
 func NewDefaultCostThresholds() CostThresholds {
 	return CostThresholds{
-		MaxBytesProcessed:   Int64Ptr(100 * 1024 * 1024 * 1024), // 100 GB limit
+		MaxBytesProcessed:   Int64Ptr(200 * 1024 * 1024 * 1024), // 200 GB limit
 		MaxEstimatedCostUSD: Float64Ptr(5.0),                    // $5 USD limit
 		WarnThresholdBytes:  Int64Ptr(10 * 1024 * 1024 * 1024),  // Warn at 10 GB
-		MaxBytesBilled:      Int64Ptr(200 * 1024 * 1024 * 1024), // Hard limit at 200 GB
+		MaxBytesBilled:      Int64Ptr(400 * 1024 * 1024 * 1024), // 400 GiB limit
 		UseResultCache:      BoolPtr(true),                      // Enable caching for cost savings
 		JobLabels: map[string]string{
 			"environment": "production",
@@ -509,11 +509,11 @@ func NewDefaultCostThresholds() CostThresholds {
 // NewConservativeCostThresholds returns very strict cost thresholds for development/testing
 func NewConservativeCostThresholds() CostThresholds {
 	return CostThresholds{
-		MaxBytesProcessed:   Int64Ptr(1 * 1024 * 1024 * 1024), // 1 GB limit
-		MaxEstimatedCostUSD: Float64Ptr(0.10),                 // $0.10 USD limit
-		WarnThresholdBytes:  Int64Ptr(100 * 1024 * 1024),      // Warn at 100 MB
-		MaxBytesBilled:      Int64Ptr(2 * 1024 * 1024 * 1024), // Hard limit at 2 GB
-		UseResultCache:      BoolPtr(true),                    // Enable caching
+		MaxBytesProcessed:   Int64Ptr(10 * 1024 * 1024 * 1024), // 10 GB limit
+		MaxEstimatedCostUSD: Float64Ptr(0.20),                  // $0.10 USD limit
+		WarnThresholdBytes:  Int64Ptr(1024 * 1024 * 1024),      // Warn at 100 MB
+		MaxBytesBilled:      Int64Ptr(15 * 1024 * 1024 * 1024), // Hard limit at 15 GB
+		UseResultCache:      BoolPtr(true),                     // Enable caching
 		JobLabels: map[string]string{
 			"environment": "development",
 			"cost_tier":   "conservative",
