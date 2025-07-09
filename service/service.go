@@ -655,6 +655,8 @@ func (qr *QueryRunner) performSync() error {
 		qr.config.Period.String(),
 		sanitizedParams,
 		storageWeightConfig,
+		qr.config.GetDisplayName(),
+		qr.config.GetDisplayAvatar(),
 	); err != nil {
 		return fmt.Errorf("failed to store snapshot for query %s: %w", queryID, err)
 	}

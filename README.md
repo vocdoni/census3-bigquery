@@ -114,6 +114,15 @@ go run ./cmd/service --list-queries
 - **`decimals`**: Token decimals for conversion - optional with smart defaults
 - **`parameters`**: Query-specific parameters including `min_balance` and `contract_address`
 - **`weight`**: Weight calculation configuration for census creation
+- **`snapshotsToKeep`**: Optional number of snapshots to retain for this query (default: 0 = unlimited)
+  - When a new snapshot is created, older snapshots beyond this count are automatically deleted
+  - Example: `snapshotsToKeep: 24` keeps only the 24 most recent snapshots
+- **`displayName`**: Optional human-readable display name for the query (default: uses the `name` field)
+  - Shown in API responses and user interfaces
+  - Example: `displayName: "Ethereum Holders"`
+- **`displayAvatar`**: Optional URL to an avatar/logo image for visual representation (default: empty string)
+  - Should be a publicly accessible HTTPS URL
+  - Example: `displayAvatar: "https://example.com/avatars/eth.png"`
 
 
 #### Weight Configuration Strategies
@@ -222,7 +231,9 @@ curl "http://localhost:8080/snapshots?page=1&pageSize=10&minBalance=1.0"
         "targetMinWeight": 1,
         "maxWeight": 10000
       },
-      "createdAt": "2025-06-18T00:01:23Z"
+      "createdAt": "2025-06-18T00:01:23Z",
+      "displayName": "Ethereum Holders Quadratic",
+      "displayAvatar": "https://example.com/avatars/eth.png"
     }
   ],
   "total": 25,
@@ -239,6 +250,20 @@ Get the most recent snapshot.
 **Example:**
 ```bash
 curl "http://localhost:8080/snapshots/latest"
+```
+
+**Response:**
+```json
+{
+  "snapshotDate": "2025-06-18T00:00:00Z",
+  "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
+  "participantCount": 150,
+  "minBalance": 1.0,
+  "queryName": "ethereum_holders_quadratic",
+  "createdAt": "2025-06-18T00:01:23Z",
+  "displayName": "Ethereum Holders Quadratic",
+  "displayAvatar": "https://example.com/avatars/eth.png"
+}
 ```
 
 #### `GET /censuses/{root}/size`

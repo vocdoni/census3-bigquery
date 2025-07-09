@@ -4,6 +4,8 @@
 queries:
   # Example 1: Simple Ethereum holders with equal voting
   - name: ethereum_holders_equal
+    displayName: "Ethereum Holders"
+    displayAvatar: "https://example.com/avatars/eth.png"
     query: ethereum_balances
     period: 1h
     decimals: 18
@@ -16,6 +18,8 @@ queries:
 
   # Example 2: ERC20 token holders with cost control
   - name: justice_token_holders
+    displayName: "Justice Token Holders"
+    # displayAvatar is optional - if omitted, defaults to empty string
     query: erc20_holders
     period: 50m
     estimate_first: true
@@ -225,3 +229,15 @@ queries:
 #     - snapshotsToKeep: 2 = Keep only the 2 most recent snapshots
 #     - snapshotsToKeep: 10 = Keep only the 10 most recent snapshots
 #     - snapshotsToKeep: 100 = Keep only the 100 most recent snapshots
+#
+# Display Options:
+#
+# displayName: string (optional)
+#   - Human-readable display name for the query
+#   - Shown in API responses and user interfaces
+#   - If omitted, defaults to the query name
+#
+# displayAvatar: string (optional)
+#   - URL to an avatar/logo image for visual representation
+#   - Should be a publicly accessible HTTPS URL
+#   - If omitted, defaults to empty string

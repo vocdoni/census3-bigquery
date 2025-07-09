@@ -55,6 +55,8 @@ type QueryConfig struct {
 	EstimateFirst   *bool                  `yaml:"estimate_first,omitempty" json:"estimate_first,omitempty"`   // Whether to estimate query cost before execution
 	CostPreset      *string                `yaml:"cost_preset,omitempty" json:"cost_preset,omitempty"`         // Simple cost preset: "conservative", "default", "high_volume", "none"
 	SnapshotsToKeep *int                   `yaml:"snapshotsToKeep,omitempty" json:"snapshotsToKeep,omitempty"` // Number of snapshots to keep (0 = unlimited)
+	DisplayName     *string                `yaml:"displayName,omitempty" json:"displayName,omitempty"`         // Human-readable display name for the query
+	DisplayAvatar   *string                `yaml:"displayAvatar,omitempty" json:"displayAvatar,omitempty"`     // Avatar URL for visual representation
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -377,6 +379,22 @@ func (qc *QueryConfig) GetSnapshotsToKeep() int {
 		return *qc.SnapshotsToKeep
 	}
 	return 0 // Default: keep all snapshots
+}
+
+// GetDisplayName returns the display name with default to query name
+func (qc *QueryConfig) GetDisplayName() string {
+	if qc.DisplayName != nil && *qc.DisplayName != "" {
+		return *qc.DisplayName
+	}
+	return qc.Name // Default to query name
+}
+
+// GetDisplayAvatar returns the display avatar URL
+func (qc *QueryConfig) GetDisplayAvatar() string {
+	if qc.DisplayAvatar != nil {
+		return *qc.DisplayAvatar
+	}
+	return "" // Default to empty string
 }
 
 // ValidateWeightConfig validates the weight configuration

@@ -38,12 +38,14 @@ type KVSnapshot struct {
 	ParticipantCount int                    `json:"participantCount"`
 	CreatedAt        time.Time              `json:"createdAt"`
 	MinBalance       float64                `json:"minBalance"`
-	QueryName        string                 `json:"queryName"`    // User-defined name for this query instance
-	QueryType        string                 `json:"queryType"`    // BigQuery query name from registry
-	Decimals         int                    `json:"decimals"`     // Token decimals used for this query
-	Period           string                 `json:"period"`       // Query execution period (e.g., "1h", "30m")
-	Parameters       map[string]interface{} `json:"parameters"`   // All query parameters
-	WeightConfig     *WeightConfig          `json:"weightConfig"` // Weight calculation configuration
+	QueryName        string                 `json:"queryName"`     // User-defined name for this query instance
+	QueryType        string                 `json:"queryType"`     // BigQuery query name from registry
+	Decimals         int                    `json:"decimals"`      // Token decimals used for this query
+	Period           string                 `json:"period"`        // Query execution period (e.g., "1h", "30m")
+	Parameters       map[string]interface{} `json:"parameters"`    // All query parameters
+	WeightConfig     *WeightConfig          `json:"weightConfig"`  // Weight calculation configuration
+	DisplayName      string                 `json:"displayName"`   // Human-readable display name
+	DisplayAvatar    string                 `json:"displayAvatar"` // Avatar URL for visual representation
 }
 
 // KVSnapshotStorage manages persistent storage of snapshots using KV database
@@ -89,7 +91,7 @@ func (s *KVSnapshotStorage) generateIndexKey(prefix string, value interface{}) [
 }
 
 // AddSnapshot adds a new snapshot to storage with efficient indexing
-func (s *KVSnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, minBalance float64, queryName string, queryType string, decimals int, period string, parameters map[string]interface{}, weightConfig *WeightConfig) error {
+func (s *KVSnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types.HexBytes, participantCount int, minBalance float64, queryName string, queryType string, decimals int, period string, parameters map[string]interface{}, weightConfig *WeightConfig, displayName string, displayAvatar string) error {
 	snapshot := KVSnapshot{
 		SnapshotDate:     snapshotDate,
 		CensusRoot:       censusRoot,
@@ -102,6 +104,8 @@ func (s *KVSnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types
 		Period:           period,
 		Parameters:       parameters,
 		WeightConfig:     weightConfig,
+		DisplayName:      displayName,
+		DisplayAvatar:    displayAvatar,
 	}
 
 	// Serialize snapshot

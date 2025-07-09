@@ -81,6 +81,8 @@ type SnapshotResponse struct {
 	MinBalance       float64 `json:"minBalance"`
 	QueryName        string  `json:"queryName"`
 	CreatedAt        string  `json:"createdAt"`
+	DisplayName      string  `json:"displayName"`
+	DisplayAvatar    string  `json:"displayAvatar"`
 }
 
 // SnapshotsListResponse represents the full response for the snapshots endpoint
@@ -261,6 +263,8 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 			MinBalance:       snapshot.MinBalance,
 			QueryName:        snapshot.QueryName,
 			CreatedAt:        snapshot.CreatedAt.Format(time.RFC3339),
+			DisplayName:      snapshot.DisplayName,
+			DisplayAvatar:    snapshot.DisplayAvatar,
 		}
 	}
 
@@ -305,6 +309,8 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 		MinBalance:       latest.MinBalance,
 		QueryName:        latest.QueryName,
 		CreatedAt:        latest.CreatedAt.Format(time.RFC3339),
+		DisplayName:      latest.DisplayName,
+		DisplayAvatar:    latest.DisplayAvatar,
 	}
 
 	// Set content type and encode response
