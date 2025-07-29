@@ -233,7 +233,8 @@ curl "http://localhost:8080/snapshots?page=1&pageSize=10&minBalance=1.0"
       },
       "createdAt": "2025-06-18T00:01:23Z",
       "displayName": "Ethereum Holders Quadratic",
-      "displayAvatar": "https://example.com/avatars/eth.png"
+      "displayAvatar": "https://example.com/avatars/eth.png",
+      "weightStrategy": "proportional"
     }
   ],
   "total": 25,
@@ -262,9 +263,28 @@ curl "http://localhost:8080/snapshots/latest"
   "queryName": "ethereum_holders_quadratic",
   "createdAt": "2025-06-18T00:01:23Z",
   "displayName": "Ethereum Holders Quadratic",
-  "displayAvatar": "https://example.com/avatars/eth.png"
+  "displayAvatar": "https://example.com/avatars/eth.png",
+  "weightStrategy": "proportional"
 }
 ```
+
+### API Response Fields
+
+Both snapshot endpoints (`/snapshots` and `/snapshots/latest`) return the following fields:
+
+- **`weightStrategy`** (string): Simplified weight strategy used for the snapshot
+  - `"constant"` - Equal voting weight for all participants
+  - `"proportional"` - Weight proportional to token balance
+  - Derived from the query's `weight.strategy` configuration:
+    - `"constant"` → `"constant"`
+    - `"proportional_auto"` → `"proportional"`
+    - `"proportional_manual"` → `"proportional"`
+  - Defaults to `"constant"` if weight configuration is missing
+
+- **`weightConfig`** (object): Complete weight configuration details from the original query
+- **`displayName`** (string): Human-readable name for the query
+- **`displayAvatar`** (string): Avatar URL for visual representation
+- **Other fields**: Standard snapshot metadata (date, root, participant count, etc.)
 
 #### `GET /censuses/{root}/size`
 Get the number of participants in a census by its merkle root.

@@ -83,6 +83,7 @@ type SnapshotResponse struct {
 	CreatedAt        string  `json:"createdAt"`
 	DisplayName      string  `json:"displayName"`
 	DisplayAvatar    string  `json:"displayAvatar"`
+	WeightStrategy   string  `json:"weightStrategy"`
 }
 
 // SnapshotsListResponse represents the full response for the snapshots endpoint
@@ -265,6 +266,7 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:        snapshot.CreatedAt.Format(time.RFC3339),
 			DisplayName:      snapshot.DisplayName,
 			DisplayAvatar:    snapshot.DisplayAvatar,
+			WeightStrategy:   mapWeightStrategy(snapshot.WeightConfig),
 		}
 	}
 
@@ -311,6 +313,7 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:        latest.CreatedAt.Format(time.RFC3339),
 		DisplayName:      latest.DisplayName,
 		DisplayAvatar:    latest.DisplayAvatar,
+		WeightStrategy:   mapWeightStrategy(latest.WeightConfig),
 	}
 
 	// Set content type and encode response
@@ -692,6 +695,22 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		ErrMarshalingServerJSONFailed.WithErr(err).Write(w)
 		return
+	}
+}
+
+// mapWeightStrategy maps internal weight strategy to API response format
+func mapWeightStrategy(weightConfig *storage.WeightConfig) string {
+	if weightConfig == nil || weightConfig.Strategy == "" {
+		return "constant"
+	}
+
+	switch weightConfig.Strategy {
+	case "constant":
+		return "constant"
+	case "proportional_auto", "proportional_manual":
+		return "proportional"
+	default:
+		return "constant"
 	}
 }
 
