@@ -5,23 +5,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+
+	davincitypes "github.com/vocdoni/davinci-node/types"
 )
 
 // CensusProof is the struct to represent a proof of inclusion in the census
 // merkle tree. For example, it will be provided by the user to verify that he
 // or she can vote in the process.
 type CensusProof struct {
-	Root     HexBytes `json:"root"`
-	Key      HexBytes `json:"key"`
-	Value    HexBytes `json:"value"`
-	Siblings HexBytes `json:"siblings"`
-	Weight   *BigInt  `json:"weight"`
+	// Generic fields
+	CensusOrigin davincitypes.CensusOrigin `json:"censusOrigin"`
+	Root         HexBytes                  `json:"root"`
+	Address      HexBytes                  `json:"address"`
+	Weight       *BigInt                   `json:"weight,omitempty"`
+	// Merkletree related fields
+	Siblings HexBytes `json:"siblings,omitempty"`
+	Value    HexBytes `json:"value,omitempty"`
+	// CSP related fields
+	ProcessID HexBytes `json:"processId,omitempty"`
+	PublicKey HexBytes `json:"publicKey,omitempty"`
+	Signature HexBytes `json:"signature,omitempty"`
 }
 
 // Valid checks that the CensusProof is well-formed
 func (cp *CensusProof) Valid() bool {
-	return cp.Root != nil && cp.Key != nil && cp.Value != nil &&
-		cp.Siblings != nil && cp.Weight != nil
+	if cp == nil || cp.Root == nil && cp.Address == nil && cp.Value != nil &&
+		cp.Siblings != nil && cp.Weight != nil {
+		return false
+	}
+	switch cp.CensusOrigin {
+	case davincitypes.CensusOriginMerkleTree:
+		return cp.Root != nil && cp.Address != nil && cp.Value != nil &&
+			cp.Siblings != nil && cp.Weight != nil
+	case davincitypes.CensusOriginCSPEdDSABLS12377:
+		return cp.Root != nil && cp.Address != nil && cp.ProcessID != nil &&
+			cp.PublicKey != nil && cp.Signature != nil
+	default:
+		return false
+	}
 }
 
 // String returns a string representation of the CensusProof

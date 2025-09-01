@@ -10,8 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vocdoni/arbo"
-	"go.vocdoni.io/dvote/db"
-	"go.vocdoni.io/dvote/db/prefixeddb"
+	"github.com/vocdoni/davinci-node/db"
+	"github.com/vocdoni/davinci-node/db/prefixeddb"
+	davincitypes "github.com/vocdoni/davinci-node/types"
 
 	"census3-bigquery/log"
 )
@@ -499,7 +500,7 @@ func (c *CensusDB) VerifyProof(proof *CensusProof) bool {
 			return false
 		}
 	}
-	return VerifyProof(proof.Key, proof.Value, proof.Root, proof.Siblings)
+	return VerifyProof(proof.Address, proof.Value, proof.Root, proof.Siblings)
 }
 
 // ProofByRoot generates a Merkle proof for the given leafKey in a census identified by its root.
@@ -518,11 +519,12 @@ func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
 	}
 
 	return &CensusProof{
-		Root:     root,
-		Key:      key,
-		Value:    value,
-		Siblings: siblings,
-		Weight:   (*BigInt)(arbo.BytesToBigInt(value)),
+		CensusOrigin: davincitypes.CensusOriginMerkleTree,
+		Root:         root,
+		Address:      key,
+		Value:        value,
+		Siblings:     siblings,
+		Weight:       (*BigInt)(arbo.BytesToBigInt(value)),
 	}, nil
 }
 

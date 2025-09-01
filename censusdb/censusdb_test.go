@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/google/uuid"
-	"go.vocdoni.io/dvote/db"
-	"go.vocdoni.io/dvote/db/metadb"
+	"github.com/vocdoni/davinci-node/db"
+	"github.com/vocdoni/davinci-node/db/metadb"
 )
 
 // newDatabase returns a new in-memory test database.
@@ -386,7 +386,7 @@ func TestBasicProofGeneration(t *testing.T) {
 	proof, err := censusDB.ProofByRoot(actualRoot, leafKey)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, proof, qt.Not(qt.IsNil))
-	qt.Assert(t, string(proof.Key), qt.DeepEquals, string(leafKey))
+	qt.Assert(t, string(proof.Address), qt.DeepEquals, string(leafKey))
 	qt.Assert(t, string(proof.Value), qt.DeepEquals, string(value))
 
 	// Verify the proof

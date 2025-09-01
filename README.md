@@ -312,8 +312,9 @@ curl "http://localhost:8080/censuses/0x832f.../proof?key=0x742d35Cc6634C0532925a
 **Response:**
 ```json
 {
+  "censusOrigin": 1,
   "root": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
-  "key": "0x742d35Cc6634C0532925a3b8D4C9db96",
+  "address": "0x742d35Cc6634C0532925a3b8D4C9db96",
   "value": "0x64",
   "siblings": ["0x...", "0x..."],
   "weight": "100"
@@ -363,11 +364,11 @@ Add participants to a working census (max 1M total).
 {
   "participants": [
     {
-      "key": "0x742d35Cc6634C0532925a3b8D4C9db96",
+      "address": "0x742d35Cc6634C0532925a3b8D4C9db96",
       "weight": "100"
     },
     {
-      "key": "0x8ba1f109551bD432803012645Hac136c",
+      "address": "0x8ba1f109551bD432803012645Hac136c",
       "weight": "50"
     }
   ]

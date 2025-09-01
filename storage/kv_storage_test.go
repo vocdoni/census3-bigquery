@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/frankban/quicktest"
+	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
-	"go.vocdoni.io/dvote/db/metadb"
 )
 
 func TestKVSnapshotStorage(t *testing.T) {

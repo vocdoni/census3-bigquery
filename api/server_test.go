@@ -11,9 +11,9 @@ import (
 
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
+	"github.com/vocdoni/davinci-node/db"
+	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
-	"go.vocdoni.io/dvote/db"
-	"go.vocdoni.io/dvote/db/metadb"
 
 	"census3-bigquery/censusdb"
 	"census3-bigquery/storage"
@@ -463,7 +463,7 @@ func TestAPIServerCensusProof(t *testing.T) {
 
 	// Verify the proof contains the expected data
 	c.Assert(response.Root, quicktest.DeepEquals, censusdb.HexBytes(root))
-	c.Assert(response.Key, quicktest.DeepEquals, censusdb.HexBytes(testKey))
+	c.Assert(response.Address, quicktest.DeepEquals, censusdb.HexBytes(testKey))
 	c.Assert(response.Value, quicktest.DeepEquals, censusdb.HexBytes(testValue))
 }
 

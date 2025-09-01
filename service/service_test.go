@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
-	"go.vocdoni.io/dvote/db/metadb"
+	"github.com/vocdoni/davinci-node/db/metadb"
 
 	"census3-bigquery/bigquery"
 	"census3-bigquery/censusdb"

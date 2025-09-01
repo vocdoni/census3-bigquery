@@ -12,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vocdoni/arbo"
+	"github.com/vocdoni/davinci-node/db"
+	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
-	"go.vocdoni.io/dvote/db"
-	"go.vocdoni.io/dvote/db/metadb"
 
 	"census3-bigquery/alchemy"
 	"census3-bigquery/api"

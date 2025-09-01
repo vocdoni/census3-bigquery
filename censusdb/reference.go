@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vocdoni/arbo"
-	"go.vocdoni.io/dvote/db"
+	"github.com/vocdoni/davinci-node/db"
 )
 
 // CensusRef is a reference to a census. It holds the Merkle tree.

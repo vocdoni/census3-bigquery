@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/types"
-	"go.vocdoni.io/dvote/db"
 
 	"census3-bigquery/log"
 )
