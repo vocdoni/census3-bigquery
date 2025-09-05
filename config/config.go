@@ -40,6 +40,16 @@ type BigQueryPricing struct {
 	PricePerTBProcessed float64 `yaml:"price_per_tb_processed" json:"price_per_tb_processed"` // Default: $5.00 per TB
 }
 
+// FarcasterConfig represents Farcaster metadata configuration
+type FarcasterConfig struct {
+	NeynarAPIKey string `yaml:"neynarApiKey" json:"neynarApiKey"` // Neynar API key for Farcaster data
+}
+
+// MetadataConfig represents metadata configuration for a query
+type MetadataConfig struct {
+	Farcaster *FarcasterConfig `yaml:"farcaster,omitempty" json:"farcaster,omitempty"` // Farcaster metadata configuration
+}
+
 // QueryConfig represents a single query configuration
 type QueryConfig struct {
 	Name            string                 `yaml:"name" json:"name"`                           // User-defined name for this query instance
@@ -57,6 +67,7 @@ type QueryConfig struct {
 	SnapshotsToKeep *int                   `yaml:"snapshotsToKeep,omitempty" json:"snapshotsToKeep,omitempty"` // Number of snapshots to keep (0 = unlimited)
 	DisplayName     *string                `yaml:"displayName,omitempty" json:"displayName,omitempty"`         // Human-readable display name for the query
 	DisplayAvatar   *string                `yaml:"displayAvatar,omitempty" json:"displayAvatar,omitempty"`     // Avatar URL for visual representation
+	Metadata        *MetadataConfig        `yaml:"metadata,omitempty" json:"metadata,omitempty"`               // Metadata configuration for additional data enrichment
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -429,5 +440,18 @@ func (wc *WeightConfig) Validate() error {
 		return fmt.Errorf("max_weight must be positive if specified")
 	}
 
+	return nil
+}
+
+// HasFarcasterMetadata returns true if Farcaster metadata is enabled for this query
+func (qc *QueryConfig) HasFarcasterMetadata() bool {
+	return qc.Metadata != nil && qc.Metadata.Farcaster != nil && qc.Metadata.Farcaster.NeynarAPIKey != ""
+}
+
+// GetFarcasterConfig returns the Farcaster configuration if enabled
+func (qc *QueryConfig) GetFarcasterConfig() *FarcasterConfig {
+	if qc.HasFarcasterMetadata() {
+		return qc.Metadata.Farcaster
+	}
 	return nil
 }

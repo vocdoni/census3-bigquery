@@ -220,21 +220,13 @@ curl "http://localhost:8080/snapshots?page=1&pageSize=10&minBalance=1.0"
       "participantCount": 150,
       "minBalance": 1.0,
       "queryName": "ethereum_holders_quadratic",
-      "queryType": "ethereum_balances",
-      "decimals": 18,
-      "period": "1h",
-      "parameters": {
-        "min_balance": 1.0
-      },
-      "weightConfig": {
-        "strategy": "proportional_auto",
-        "targetMinWeight": 1,
-        "maxWeight": 10000
-      },
       "createdAt": "2025-06-18T00:01:23Z",
       "displayName": "Ethereum Holders Quadratic",
       "displayAvatar": "https://example.com/avatars/eth.png",
-      "weightStrategy": "proportional"
+      "weightStrategy": "proportional",
+      "metadata": {
+        "farcaster": "/metadata/farcaster/0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12"
+      }
     }
   ],
   "total": 25,
@@ -281,7 +273,11 @@ Both snapshot endpoints (`/snapshots` and `/snapshots/latest`) return the follow
     - `"proportional_manual"` → `"proportional"`
   - Defaults to `"constant"` if weight configuration is missing
 
-- **`weightConfig`** (object): Complete weight configuration details from the original query
+- **`metadata`** (object, optional): Map of available metadata types to their API endpoints
+  - Only included when metadata is available for the census
+  - Example: `{"farcaster": "/metadata/farcaster/0x832f..."}`
+  - Allows clients to easily discover and fetch additional census metadata
+
 - **`displayName`** (string): Human-readable name for the query
 - **`displayAvatar`** (string): Avatar URL for visual representation
 - **Other fields**: Standard snapshot metadata (date, root, participant count, etc.)
@@ -320,6 +316,44 @@ curl "http://localhost:8080/censuses/0x832f.../proof?key=0x742d35Cc6634C0532925a
   "weight": "100"
 }
 ```
+
+### Metadata Endpoints
+
+#### `GET /metadata/farcaster/{censusRoot}`
+Get Farcaster metadata for a census (usernames and voting weights).
+
+**Example:**
+```bash
+curl "http://localhost:8080/metadata/farcaster/0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12"
+```
+
+**Response:**
+```json
+{
+  "censusRoot": "0x832f31d1490ea413864da0be8ec8e962ab0e208a0ca25178c908b5ad22c83f12",
+  "users": [
+    {
+      "username": "alice",
+      "weight": 100.0,
+      "fid": 12345,
+      "address": "0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6"
+    },
+    {
+      "username": "bob", 
+      "weight": 50.0,
+      "fid": 67890,
+      "address": "0x8ba1f109551bD432803012645Hac136c"
+    }
+  ],
+  "createdAt": "2025-06-18T00:01:23Z",
+  "totalUsers": 2
+}
+```
+
+**Notes:**
+- Only available for censuses with Farcaster metadata enabled in configuration
+- Returns 404 if no Farcaster metadata exists for the census root
+- Metadata is automatically generated during census creation when configured
 
 ### Health Endpoint
 
@@ -665,7 +699,7 @@ This method stores the service account key as a base64-encoded environment varia
    CENSUS3_PROJECT=census3-bigquery-project-123456
    
    # Google Cloud Credentials (Base64 encoded service account key)
-   GOOGLE_APPLICATION_CREDENTIALS_JSON=ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiY2Vuc3VzMy1iaWdxdWVyeS1wcm9qZWN0LTEyMzQ1NiIsCiAgInByaXZhdGVfa2V5X2lkIjogIjEyMzQ1NiIsCiAgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuLi4uXG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAiY2Vuc3VzMy1iaWdxdWVyeS1zYUBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEyMzQ1Njc4OTAiLAogICJhdXRoX3VyaSI6ICJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsCiAgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsCiAgImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9vYXV0aDIvdjEvY2VydHMiLAogICJjbGllbnRfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9yb2JvdC92MS9tZXRhZGF0YS94NTA5L2NlbnN1czMtYmlncXVlcnktc2ElNDBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIgp9
+   GOOGLE_APPLICATION_CREDENTIALS_JSON=ewogYCJ1eXBlIjogInNlabZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiY2Vuc3VzMy1iaWdxdWVyeS1wcm9qZWN0LTEyMzQ1NiIsCiAgInByaXZhdGVfa2V5X2lkIjogIjEyMzQ1NiIsCiAgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuLi4uXG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAiY2Vuc3VzMy1iaWdxdWVyeS1zYUBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEyMzQ1Njc4OTAiLAogICJhdXRoX3VyaSI6ICJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsCiAgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsCiAgImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9vYXV0aDIvdjEvY2VydHMiLAogICJjbGllbnRfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9yb2JvdC92MS9tZXRhZGF0YS94NTA5L2NlbnN1czMtYmlncXVlcnktc2ElNDBjZW5zdXMzLWJpZ3F1ZXJ5LXByb2plY3QtMTIzNDU2LmlhbS5nc2VydmljZWFjY291bnQuY29tIgp9
    
    # Service Configuration
    CENSUS3_API_PORT=8080

@@ -28,6 +28,9 @@ type SnapshotStorage interface {
 	SnapshotCount() (int, error)
 	SnapshotsByBalance(minBalance float64) ([]storage.KVSnapshot, error)
 	SnapshotsByQuery(queryName string) ([]storage.KVSnapshot, error)
+	// Metadata operations
+	GetMetadata(metadataType string, censusRoot types.HexBytes) ([]byte, error)
+	HasMetadata(metadataType string, censusRoot types.HexBytes) (bool, error)
 }
 
 // Server handles HTTP API requests
@@ -75,15 +78,16 @@ type PublishCensusResponse struct {
 
 // SnapshotResponse represents the API response for snapshots
 type SnapshotResponse struct {
-	SnapshotDate     string  `json:"snapshotDate"`
-	CensusRoot       string  `json:"censusRoot"`
-	ParticipantCount int     `json:"participantCount"`
-	MinBalance       float64 `json:"minBalance"`
-	QueryName        string  `json:"queryName"`
-	CreatedAt        string  `json:"createdAt"`
-	DisplayName      string  `json:"displayName"`
-	DisplayAvatar    string  `json:"displayAvatar"`
-	WeightStrategy   string  `json:"weightStrategy"`
+	SnapshotDate     string            `json:"snapshotDate"`
+	CensusRoot       string            `json:"censusRoot"`
+	ParticipantCount int               `json:"participantCount"`
+	MinBalance       float64           `json:"minBalance"`
+	QueryName        string            `json:"queryName"`
+	CreatedAt        string            `json:"createdAt"`
+	DisplayName      string            `json:"displayName"`
+	DisplayAvatar    string            `json:"displayAvatar"`
+	WeightStrategy   string            `json:"weightStrategy"`
+	Metadata         map[string]string `json:"metadata,omitempty"` // Map of metadata type to API path
 }
 
 // SnapshotsListResponse represents the full response for the snapshots endpoint
@@ -148,6 +152,9 @@ func (s *Server) setupRouter() {
 	r.Get("/censuses/{censusId}/size", s.handleCensusSize)
 	r.Get("/censuses/{censusRoot}/proof", s.handleCensusProof)
 	r.Get("/censuses/{censusRoot}/participants", s.handleCensusParticipants)
+
+	// Metadata endpoints
+	r.Get("/metadata/farcaster/{censusRoot}", s.handleFarcasterMetadata)
 
 	s.router = r
 }
@@ -257,7 +264,7 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	// Convert to response format
 	responseSnapshots := make([]SnapshotResponse, len(paginatedSnapshots))
 	for i, snapshot := range paginatedSnapshots {
-		responseSnapshots[i] = SnapshotResponse{
+		response := SnapshotResponse{
 			SnapshotDate:     snapshot.SnapshotDate.Format(time.RFC3339),
 			CensusRoot:       snapshot.CensusRoot.String(),
 			ParticipantCount: snapshot.ParticipantCount,
@@ -268,6 +275,20 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 			DisplayAvatar:    snapshot.DisplayAvatar,
 			WeightStrategy:   mapWeightStrategy(snapshot.WeightConfig),
 		}
+
+		// Check for available metadata and add links
+		metadata := make(map[string]string)
+
+		// Check for Farcaster metadata
+		if hasFarcaster, err := s.storage.HasMetadata("meta_farcaster", snapshot.CensusRoot); err == nil && hasFarcaster {
+			metadata["farcaster"] = fmt.Sprintf("/metadata/farcaster/%s", snapshot.CensusRoot.String())
+		}
+
+		if len(metadata) > 0 {
+			response.Metadata = metadata
+		}
+
+		responseSnapshots[i] = response
 	}
 
 	response := SnapshotsListResponse{
@@ -711,6 +732,42 @@ func mapWeightStrategy(weightConfig *storage.WeightConfig) string {
 		return "proportional"
 	default:
 		return "constant"
+	}
+}
+
+// handleFarcasterMetadata handles GET /metadata/farcaster/{censusRoot}
+func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request) {
+	rootHex := chi.URLParam(r, "censusRoot")
+
+	// Parse the root from hex
+	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
+	if err != nil {
+		ErrInvalidCensusID.WithErr(err).Write(w)
+		return
+	}
+
+	// Convert to types.HexBytes
+	censusRoot := types.HexBytes(root)
+
+	// Get Farcaster metadata from storage
+	metadataJSON, err := s.storage.GetMetadata("meta_farcaster", censusRoot)
+	if err != nil {
+		log.Error().Err(err).Str("census_root", censusRoot.String()).Msg("Error getting Farcaster metadata")
+		ErrGenericInternalServerError.WithErr(err).Write(w)
+		return
+	}
+
+	if metadataJSON == nil {
+		ErrResourceNotFound.With("Farcaster metadata not found for census root").Write(w)
+		return
+	}
+
+	// Return the JSON metadata directly
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(metadataJSON); err != nil {
+		log.Error().Err(err).Msg("Error writing Farcaster metadata response")
+		ErrGenericInternalServerError.WithErr(err).Write(w)
+		return
 	}
 }
 

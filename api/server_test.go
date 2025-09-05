@@ -60,6 +60,18 @@ func (m *mockStorage) SnapshotsByQuery(queryName string) ([]storage.KVSnapshot, 
 	return filtered, nil
 }
 
+// GetMetadata implements the SnapshotStorage interface for testing
+func (m *mockStorage) GetMetadata(metadataType string, censusRoot types.HexBytes) ([]byte, error) {
+	// For testing, return nil (no metadata)
+	return nil, nil
+}
+
+// HasMetadata implements the SnapshotStorage interface for testing
+func (m *mockStorage) HasMetadata(metadataType string, censusRoot types.HexBytes) (bool, error) {
+	// For testing, return false (no metadata)
+	return false, nil
+}
+
 // For testing census endpoints, we'll create a real censusDB instance with an in-memory database
 func createTestCensusDB(t *testing.T) *censusdb.CensusDB {
 	// Create an in-memory database for testing

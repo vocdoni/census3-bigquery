@@ -15,11 +15,12 @@ import (
 
 const (
 	// Key prefixes for different data types
-	snapshotPrefix     = "snap_"
-	indexPrefix        = "idx_"
-	metadataPrefix     = "meta_"
-	balanceIndexPrefix = "bal_"
-	queryIndexPrefix   = "qry_"
+	snapshotPrefix      = "snap_"
+	indexPrefix         = "idx_"
+	metadataPrefix      = "meta_"
+	balanceIndexPrefix  = "bal_"
+	queryIndexPrefix    = "qry_"
+	metaFarcasterPrefix = "meta_farcaster_"
 )
 
 // WeightConfig represents weight calculation configuration for storage
@@ -474,6 +475,61 @@ func (s *KVSnapshotStorage) DeleteOldSnapshotsByQuery(queryName string, keepCoun
 		Msg("Deleted old snapshots for query")
 
 	return len(keysToDelete), censusRootsToDelete, nil
+}
+
+// StoreMetadata stores generic metadata for a census root with the given metadata type
+// The key format is: {metadataType}_{censusRoot}
+// The value is stored as raw bytes (typically JSON)
+func (s *KVSnapshotStorage) StoreMetadata(metadataType string, censusRoot types.HexBytes, data []byte) error {
+	key := fmt.Sprintf("%s_%s", metadataType, censusRoot.String())
+
+	wtx := s.db.WriteTx()
+	defer wtx.Discard()
+
+	if err := wtx.Set([]byte(key), data); err != nil {
+		return fmt.Errorf("failed to store metadata: %w", err)
+	}
+
+	return wtx.Commit()
+}
+
+// GetMetadata retrieves generic metadata for a census root with the given metadata type
+// Returns nil if metadata doesn't exist
+func (s *KVSnapshotStorage) GetMetadata(metadataType string, censusRoot types.HexBytes) ([]byte, error) {
+	key := fmt.Sprintf("%s_%s", metadataType, censusRoot.String())
+
+	data, err := s.db.Get([]byte(key))
+	if err != nil {
+		if err == db.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	return data, nil
+}
+
+// HasMetadata checks if metadata exists for a census root with the given metadata type
+func (s *KVSnapshotStorage) HasMetadata(metadataType string, censusRoot types.HexBytes) (bool, error) {
+	data, err := s.GetMetadata(metadataType, censusRoot)
+	if err != nil {
+		return false, err
+	}
+	return data != nil, nil
+}
+
+// DeleteMetadata removes metadata for a census root with the given metadata type
+func (s *KVSnapshotStorage) DeleteMetadata(metadataType string, censusRoot types.HexBytes) error {
+	key := fmt.Sprintf("%s_%s", metadataType, censusRoot.String())
+
+	wtx := s.db.WriteTx()
+	defer wtx.Discard()
+
+	if err := wtx.Delete([]byte(key)); err != nil && err != db.ErrKeyNotFound {
+		return fmt.Errorf("failed to delete metadata: %w", err)
+	}
+
+	return wtx.Commit()
 }
 
 // Close closes the storage (if needed)

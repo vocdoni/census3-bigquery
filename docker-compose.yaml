@@ -46,6 +46,7 @@ services:
       - "traefik.http.routers.census3-service.tls.certresolver=le"
       - "traefik.http.services.census3-service.loadbalancer.server.port=${CENSUS3_API_PORT:-8080}"
       - "traefik.http.routers.census3-service.tls.domains[0].main=${DOMAIN}"
+      - "com.centurylinklabs.watchtower.enable=true"
 
   traefik:
     image: traefik:3.4.1
@@ -68,6 +69,7 @@ services:
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.le.acme.email=root@vocdoni.io"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "com.centurylinklabs.watchtower.enable=true"
     restart: ${RESTART:-unless-stopped}
     depends_on:
       - census3-service

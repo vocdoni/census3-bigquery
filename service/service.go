@@ -22,6 +22,7 @@ import (
 	"census3-bigquery/censusdb"
 	"census3-bigquery/config"
 	"census3-bigquery/log"
+	"census3-bigquery/metadata"
 	"census3-bigquery/storage"
 )
 
@@ -603,7 +604,32 @@ func (qr *QueryRunner) performSync() error {
 		Str("query", queryID).
 		Msg("Root verification successful")
 
-	// Step 7: Schedule cleanup of working census in goroutine
+	// Step 7: Process Farcaster metadata if enabled
+	if qr.config.HasFarcasterMetadata() {
+		log.Info().
+			Str("query", queryID).
+			Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+			Msg("Processing Farcaster metadata")
+
+		farcasterConfig := qr.config.GetFarcasterConfig()
+		farcasterProcessor := metadata.NewFarcasterProcessor(nil, qr.service.kvStorage)
+
+		if err := farcasterProcessor.ProcessCensus(qr.ctx, rootCensusRef, types.HexBytes(censusRoot), farcasterConfig); err != nil {
+			// Log error but don't fail the entire sync - metadata is optional
+			log.Warn().
+				Err(err).
+				Str("query", queryID).
+				Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+				Msg("Failed to process Farcaster metadata, continuing without metadata")
+		} else {
+			log.Info().
+				Str("query", queryID).
+				Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+				Msg("Farcaster metadata processed successfully")
+		}
+	}
+
+	// Step 8: Schedule cleanup of working census in goroutine
 	go func(workingCensusID uuid.UUID, query string) {
 		if err := qr.service.censusDB.CleanupWorkingCensus(workingCensusID); err != nil {
 			log.Error().
@@ -614,7 +640,7 @@ func (qr *QueryRunner) performSync() error {
 		}
 	}(censusID, queryID)
 
-	// Step 8: Store snapshot in KV storage
+	// Step 9: Store snapshot in KV storage
 	rootHex := types.HexBytes(censusRoot)
 
 	// Convert weight config to storage format
@@ -1124,7 +1150,7 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 
 		case err := <-errorCh:
 			if err != nil {
-				return totalProcessed, fmt.Errorf("Alchemy streaming error: %w", err)
+				return totalProcessed, fmt.Errorf("alchemy streaming error: %w", err)
 			}
 
 		case <-qr.ctx.Done():

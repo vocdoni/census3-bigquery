@@ -27,7 +27,7 @@ type Client struct {
 // NewClient creates a new Alchemy client
 func NewClient(ctx context.Context, apiKey string) (*Client, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("Alchemy API key is required")
+		return nil, fmt.Errorf("alchemy API key is required")
 	}
 
 	// Create HTTP client for direct API calls
@@ -438,7 +438,11 @@ func (c *Client) makeRequest(ctx context.Context, method, url string, body io.Re
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
