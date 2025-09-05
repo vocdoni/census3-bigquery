@@ -167,8 +167,14 @@ func TestFarcasterProcessorWithMockNeynar(t *testing.T) {
 
 	farcasterUsers := processor.processFarcasterUsers(mockNeynarUsers, weights)
 	c.Assert(len(farcasterUsers), quicktest.Equals, 2)
-	c.Assert(farcasterUsers[0].Username, quicktest.Equals, "testuser1")
-	c.Assert(farcasterUsers[1].Username, quicktest.Equals, "testuser2")
+
+	// Check that both users are present (order may vary due to map iteration)
+	usernames := make(map[string]bool)
+	for _, user := range farcasterUsers {
+		usernames[user.Username] = true
+	}
+	c.Assert(usernames["testuser1"], quicktest.IsTrue)
+	c.Assert(usernames["testuser2"], quicktest.IsTrue)
 }
 
 func TestFarcasterConfigHelpers(t *testing.T) {

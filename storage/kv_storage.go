@@ -21,6 +21,10 @@ const (
 	balanceIndexPrefix  = "bal_"
 	queryIndexPrefix    = "qry_"
 	metaFarcasterPrefix = "meta_farcaster_"
+	addressListPrefix   = "addr_list_"
+
+	// DefaultAddressPageSize is the default number of addresses per page
+	DefaultAddressPageSize = 1024
 )
 
 // WeightConfig represents weight calculation configuration for storage
@@ -47,6 +51,11 @@ type KVSnapshot struct {
 	WeightConfig     *WeightConfig          `json:"weightConfig"`  // Weight calculation configuration
 	DisplayName      string                 `json:"displayName"`   // Human-readable display name
 	DisplayAvatar    string                 `json:"displayAvatar"` // Avatar URL for visual representation
+}
+
+// AddressPage represents a page of addresses for a census
+type AddressPage struct {
+	Addresses []string `json:"addresses"` // List of Ethereum addresses
 }
 
 // KVSnapshotStorage manages persistent storage of snapshots using KV database
@@ -530,6 +539,147 @@ func (s *KVSnapshotStorage) DeleteMetadata(metadataType string, censusRoot types
 	}
 
 	return wtx.Commit()
+}
+
+// StoreAddressPage stores a page of addresses for a census root
+func (s *KVSnapshotStorage) StoreAddressPage(censusRoot types.HexBytes, pageNumber int, addresses []string) error {
+	if len(addresses) == 0 {
+		return nil // Nothing to store
+	}
+
+	key := fmt.Sprintf("%s%s_%d", addressListPrefix, censusRoot.String(), pageNumber)
+
+	page := AddressPage{
+		Addresses: addresses,
+	}
+
+	// Serialize page to JSON for space efficiency
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(page); err != nil {
+		return fmt.Errorf("failed to encode address page: %w", err)
+	}
+
+	wtx := s.db.WriteTx()
+	defer wtx.Discard()
+
+	if err := wtx.Set([]byte(key), buf.Bytes()); err != nil {
+		return fmt.Errorf("failed to store address page: %w", err)
+	}
+
+	return wtx.Commit()
+}
+
+// GetAddressPage retrieves a specific page of addresses for a census root
+func (s *KVSnapshotStorage) GetAddressPage(censusRoot types.HexBytes, pageNumber int) (*AddressPage, error) {
+	key := fmt.Sprintf("%s%s_%d", addressListPrefix, censusRoot.String(), pageNumber)
+
+	data, err := s.db.Get([]byte(key))
+	if err != nil {
+		if err == db.ErrKeyNotFound {
+			return nil, nil // Page doesn't exist
+		}
+		return nil, fmt.Errorf("failed to get address page: %w", err)
+	}
+
+	var page AddressPage
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&page); err != nil {
+		return nil, fmt.Errorf("failed to decode address page: %w", err)
+	}
+
+	return &page, nil
+}
+
+// GetAllAddresses retrieves all addresses for a census root by iterating through all pages
+func (s *KVSnapshotStorage) GetAllAddresses(censusRoot types.HexBytes) ([]string, error) {
+	var allAddresses []string
+	pageNumber := 0
+
+	for {
+		page, err := s.GetAddressPage(censusRoot, pageNumber)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get address page %d: %w", pageNumber, err)
+		}
+
+		if page == nil {
+			// No more pages
+			break
+		}
+
+		allAddresses = append(allAddresses, page.Addresses...)
+		pageNumber++
+	}
+
+	log.Debug().
+		Str("census_root", censusRoot.String()).
+		Int("total_addresses", len(allAddresses)).
+		Int("pages_loaded", pageNumber).
+		Msg("Loaded all addresses from storage")
+
+	return allAddresses, nil
+}
+
+// GetAddressListPageCount returns the number of pages for a census root's address list
+func (s *KVSnapshotStorage) GetAddressListPageCount(censusRoot types.HexBytes) (int, error) {
+	pageCount := 0
+
+	for {
+		page, err := s.GetAddressPage(censusRoot, pageCount)
+		if err != nil {
+			return 0, fmt.Errorf("failed to check address page %d: %w", pageCount, err)
+		}
+
+		if page == nil {
+			break
+		}
+
+		pageCount++
+	}
+
+	return pageCount, nil
+}
+
+// HasAddressList checks if an address list exists for a census root
+func (s *KVSnapshotStorage) HasAddressList(censusRoot types.HexBytes) (bool, error) {
+	page, err := s.GetAddressPage(censusRoot, 0)
+	if err != nil {
+		return false, err
+	}
+	return page != nil, nil
+}
+
+// DeleteAddressList removes all address pages for a census root
+func (s *KVSnapshotStorage) DeleteAddressList(censusRoot types.HexBytes) error {
+	// Get the number of pages first
+	pageCount, err := s.GetAddressListPageCount(censusRoot)
+	if err != nil {
+		return fmt.Errorf("failed to get page count: %w", err)
+	}
+
+	if pageCount == 0 {
+		return nil // Nothing to delete
+	}
+
+	wtx := s.db.WriteTx()
+	defer wtx.Discard()
+
+	// Delete all pages
+	for i := 0; i < pageCount; i++ {
+		key := fmt.Sprintf("%s%s_%d", addressListPrefix, censusRoot.String(), i)
+		if err := wtx.Delete([]byte(key)); err != nil && err != db.ErrKeyNotFound {
+			return fmt.Errorf("failed to delete address page %d: %w", i, err)
+		}
+	}
+
+	if err := wtx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit address list deletion: %w", err)
+	}
+
+	log.Debug().
+		Str("census_root", censusRoot.String()).
+		Int("pages_deleted", pageCount).
+		Msg("Deleted address list")
+
+	return nil
 }
 
 // Close closes the storage (if needed)

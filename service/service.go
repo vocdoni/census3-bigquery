@@ -614,18 +614,28 @@ func (qr *QueryRunner) performSync() error {
 		farcasterConfig := qr.config.GetFarcasterConfig()
 		farcasterProcessor := metadata.NewFarcasterProcessor(nil, qr.service.kvStorage)
 
-		if err := farcasterProcessor.ProcessCensus(qr.ctx, rootCensusRef, types.HexBytes(censusRoot), farcasterConfig); err != nil {
-			// Log error but don't fail the entire sync - metadata is optional
+		// Extract original addresses and weights from the stored address list
+		addresses, weights, err := qr.extractOriginalAddressesAndWeights(types.HexBytes(censusRoot))
+		if err != nil {
 			log.Warn().
 				Err(err).
 				Str("query", queryID).
 				Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
-				Msg("Failed to process Farcaster metadata, continuing without metadata")
+				Msg("Failed to extract original addresses for Farcaster metadata, skipping")
 		} else {
-			log.Info().
-				Str("query", queryID).
-				Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
-				Msg("Farcaster metadata processed successfully")
+			if err := farcasterProcessor.ProcessCensus(qr.ctx, types.HexBytes(censusRoot), addresses, weights, farcasterConfig); err != nil {
+				// Log error but don't fail the entire sync - metadata is optional
+				log.Warn().
+					Err(err).
+					Str("query", queryID).
+					Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+					Msg("Failed to process Farcaster metadata, continuing without metadata")
+			} else {
+				log.Info().
+					Str("query", queryID).
+					Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+					Msg("Farcaster metadata processed successfully")
+			}
 		}
 	}
 
@@ -718,8 +728,9 @@ func (qr *QueryRunner) performSync() error {
 					Int("snapshots_kept", snapshotsToKeep).
 					Msg("Successfully deleted old snapshots")
 
-				// Delete the associated census data
+				// Delete the associated census data and address lists
 				for _, censusRoot := range censusRootsToDelete {
+					// Delete census data
 					if qr.service.censusDB.ExistsByRoot(censusRoot) {
 						censusID := uuid.NewSHA1(uuid.NameSpaceOID, censusRoot)
 						if err := qr.service.censusDB.Del(censusID); err != nil {
@@ -733,6 +744,22 @@ func (qr *QueryRunner) performSync() error {
 								Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
 								Str("query", queryID).
 								Msg("Deleted census data for old snapshot")
+						}
+					}
+
+					// Delete address list if it exists
+					if hasAddressList, err := qr.service.kvStorage.HasAddressList(censusRoot); err == nil && hasAddressList {
+						if err := qr.service.kvStorage.DeleteAddressList(censusRoot); err != nil {
+							log.Error().
+								Err(err).
+								Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+								Str("query", queryID).
+								Msg("Failed to delete address list for old snapshot")
+						} else {
+							log.Debug().
+								Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
+								Str("query", queryID).
+								Msg("Deleted address list for old snapshot")
 						}
 					}
 				}
@@ -750,6 +777,15 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
+
+	// Create address collector for parallel address storage
+	censusRoot := types.HexBytes(censusRef.Root())
+	addressCollector := NewAddressCollector(
+		qr.service.kvStorage,
+		censusRoot,
+		storage.DefaultAddressPageSize,
+		qr.config.GetStoreAddresses(),
+	)
 
 	// Create channels for streaming
 	participantCh := make(chan bigquery.Participant, batchSize)
@@ -778,6 +814,14 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 					totalProcessed += len(batch)
 				}
 
+				// Finalize address collection
+				if err := addressCollector.Finalize(); err != nil {
+					log.Warn().
+						Err(err).
+						Str("query", queryID).
+						Msg("Failed to finalize address collection")
+				}
+
 				elapsed := time.Since(startTime)
 				rate := float64(totalProcessed) / elapsed.Seconds()
 				log.Info().
@@ -788,6 +832,15 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 					Msg("Census creation completed")
 
 				return totalProcessed, nil
+			}
+
+			// Collect original address for metadata processing
+			if err := addressCollector.AddAddress(participant.Address.Hex()); err != nil {
+				log.Warn().
+					Err(err).
+					Str("address", participant.Address.Hex()).
+					Str("query", queryID).
+					Msg("Failed to collect address for storage")
 			}
 
 			// Hash the address key for the census
@@ -1057,6 +1110,15 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 		batchSize = DefaultBatchSize
 	}
 
+	// Create address collector for parallel address storage
+	censusRoot := types.HexBytes(censusRef.Root())
+	addressCollector := NewAddressCollector(
+		qr.service.kvStorage,
+		censusRoot,
+		storage.DefaultAddressPageSize,
+		qr.config.GetStoreAddresses(),
+	)
+
 	// Create channels for streaming
 	participantCh := make(chan alchemy.Participant, batchSize)
 	errorCh := make(chan error, 1)
@@ -1084,6 +1146,14 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 					totalProcessed += len(batch)
 				}
 
+				// Finalize address collection
+				if err := addressCollector.Finalize(); err != nil {
+					log.Warn().
+						Err(err).
+						Str("query", queryID).
+						Msg("Failed to finalize address collection")
+				}
+
 				elapsed := time.Since(startTime)
 				rate := float64(totalProcessed) / elapsed.Seconds()
 				log.Info().
@@ -1094,6 +1164,15 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 					Msg("Census creation completed")
 
 				return totalProcessed, nil
+			}
+
+			// Collect original address for metadata processing
+			if err := addressCollector.AddAddress(participant.Address.Hex()); err != nil {
+				log.Warn().
+					Err(err).
+					Str("address", participant.Address.Hex()).
+					Str("query", queryID).
+					Msg("Failed to collect address for storage")
 			}
 
 			// Hash the address key for the census
@@ -1168,6 +1247,43 @@ func convertAlchemyWeightConfig(cfg config.WeightConfig) alchemy.WeightConfig {
 		Multiplier:      cfg.Multiplier,
 		MaxWeight:       cfg.MaxWeight,
 	}
+}
+
+// extractOriginalAddressesAndWeights extracts original addresses from stored address list
+func (qr *QueryRunner) extractOriginalAddressesAndWeights(censusRoot types.HexBytes) ([]string, map[string]float64, error) {
+	// Check if address list exists for this census
+	hasAddressList, err := qr.service.kvStorage.HasAddressList(censusRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check address list existence: %w", err)
+	}
+
+	if !hasAddressList {
+		return nil, nil, fmt.Errorf("no address list found for census root - address storage may be disabled")
+	}
+
+	// Get all stored addresses
+	addresses, err := qr.service.kvStorage.GetAllAddresses(censusRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stored addresses: %w", err)
+	}
+
+	if len(addresses) == 0 {
+		return nil, nil, fmt.Errorf("address list is empty")
+	}
+
+	// For now, we'll create a simple weight map with equal weights
+	// In a more sophisticated implementation, we could store weights alongside addresses
+	weights := make(map[string]float64)
+	for _, address := range addresses {
+		weights[address] = 1.0 // Default weight - this could be improved
+	}
+
+	log.Debug().
+		Str("census_root", censusRoot.String()).
+		Int("addresses_loaded", len(addresses)).
+		Msg("Successfully loaded addresses from storage for metadata processing")
+
+	return addresses, weights, nil
 }
 
 // waitForShutdown waits for shutdown signals

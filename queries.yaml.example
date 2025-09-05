@@ -175,6 +175,7 @@ queries:
     period: 2h
     decimals: 18
     snapshotsToKeep: 12  # Keep only the 12 most recent snapshots
+    storeAddresses: true  # Enable address storage for metadata processing
     parameters:
       min_balance: 0.1  # 0.1 ETH minimum
     weight:
@@ -259,21 +260,32 @@ queries:
 #   - Should be a publicly accessible HTTPS URL
 #   - If omitted, defaults to empty string
 #
+# Address Storage Options:
+#
+# storeAddresses: true/false (optional, default: false)
+#   - Enables storage of original addresses for metadata processing
+#   - Required for Farcaster metadata and other address-based features
+#   - Addresses are stored in paginated format (1024 addresses per page)
+#   - Automatically cleaned up when snapshots are deleted
+#   - Disable for large censuses to save storage space
+#
 # Metadata Options:
 #
 # metadata: object (optional)
 #   - Configuration for additional metadata enrichment
 #   - Currently supports Farcaster metadata
+#   - Requires storeAddresses: true to function properly
 #
 # metadata.farcaster: object (optional)
 #   - Enables Farcaster metadata collection for census participants
 #   - neynarApiKey: string (required) - Your Neynar API key
 #   - When enabled, the service will:
-#     1. Extract all addresses from the census
-#     2. Query Neynar API to find associated Farcaster usernames
-#     3. Store username-to-weight mappings as metadata
-#     4. Expose metadata via GET /metadata/farcaster/{censusRoot}
-#     5. Include metadata links in snapshot responses
+#     1. Use stored addresses from the census
+#     2. Filter out invalid addresses (zero addresses, malformed hex)
+#     3. Query Neynar API to find associated Farcaster usernames
+#     4. Store username-to-weight mappings as metadata
+#     5. Expose metadata via GET /metadata/farcaster/{censusRoot}
+#     6. Include metadata links in snapshot responses
 #   - API calls are batched (350 addresses per request) for efficiency
 #   - Metadata processing is synchronous but optional (won't fail census creation)
 #   - Example response: {"users": [{"username": "alice", "weight": 100, "fid": 12345, "address": "0x..."}]}

@@ -68,6 +68,7 @@ type QueryConfig struct {
 	DisplayName     *string                `yaml:"displayName,omitempty" json:"displayName,omitempty"`         // Human-readable display name for the query
 	DisplayAvatar   *string                `yaml:"displayAvatar,omitempty" json:"displayAvatar,omitempty"`     // Avatar URL for visual representation
 	Metadata        *MetadataConfig        `yaml:"metadata,omitempty" json:"metadata,omitempty"`               // Metadata configuration for additional data enrichment
+	StoreAddresses  *bool                  `yaml:"storeAddresses,omitempty" json:"storeAddresses,omitempty"`   // Whether to store original addresses for metadata processing (default: false)
 }
 
 // QueriesFile represents the structure of the queries YAML file
@@ -454,4 +455,9 @@ func (qc *QueryConfig) GetFarcasterConfig() *FarcasterConfig {
 		return qc.Metadata.Farcaster
 	}
 	return nil
+}
+
+// GetStoreAddresses returns whether to store original addresses for metadata processing
+func (qc *QueryConfig) GetStoreAddresses() bool {
+	return qc.StoreAddresses != nil && *qc.StoreAddresses
 }

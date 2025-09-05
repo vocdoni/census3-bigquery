@@ -53,38 +53,45 @@ func NewFarcasterProcessor(neynarClient *neynar.Client, storage *storage.KVSnaps
 	}
 }
 
-// ProcessCensus processes a census to extract Farcaster metadata
-// This method extracts all addresses from the census, queries Neynar API, and stores the results
-func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRef *censusdb.CensusRef, censusRoot types.HexBytes, farcasterConfig *config.FarcasterConfig) error {
+// ProcessCensus processes a census to extract Farcaster metadata using stored addresses
+// This method uses stored addresses, queries Neynar API, and stores the results
+func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRoot types.HexBytes, addresses []string, weights map[string]float64, farcasterConfig *config.FarcasterConfig) error {
 	log.Info().
 		Str("census_root", censusRoot.String()).
+		Int("total_addresses", len(addresses)).
 		Msg("Starting Farcaster metadata processing")
 
 	startTime := time.Now()
 
-	// Extract all addresses and weights from the census
-	addresses, weights, err := fp.extractAddressesAndWeights(censusRef)
-	if err != nil {
-		return fmt.Errorf("failed to extract addresses from census: %w", err)
-	}
-
 	if len(addresses) == 0 {
 		log.Info().
 			Str("census_root", censusRoot.String()).
-			Msg("No addresses found in census, skipping Farcaster metadata processing")
+			Msg("No addresses provided, skipping Farcaster metadata processing")
+		return nil
+	}
+
+	// Filter out invalid addresses (zero addresses, non-hex, etc.)
+	validAddresses := fp.filterValidAddresses(addresses)
+
+	if len(validAddresses) == 0 {
+		log.Info().
+			Str("census_root", censusRoot.String()).
+			Int("original_count", len(addresses)).
+			Msg("No valid addresses found after filtering, skipping Farcaster metadata processing")
 		return nil
 	}
 
 	log.Info().
 		Str("census_root", censusRoot.String()).
-		Int("total_addresses", len(addresses)).
-		Msg("Extracted addresses from census")
+		Int("original_addresses", len(addresses)).
+		Int("valid_addresses", len(validAddresses)).
+		Msg("Filtered addresses for Neynar API")
 
 	// Create Neynar client with the provided API key
 	neynarClient := neynar.NewClient(farcasterConfig.NeynarAPIKey)
 
 	// Query Neynar API for Farcaster users
-	neynarUsers, err := neynarClient.GetUsersByAddresses(ctx, addresses)
+	neynarUsers, err := neynarClient.GetUsersByAddresses(ctx, validAddresses)
 	if err != nil {
 		return fmt.Errorf("failed to query Neynar API: %w", err)
 	}
@@ -115,6 +122,7 @@ func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRef *cens
 	log.Info().
 		Str("census_root", censusRoot.String()).
 		Int("total_addresses", len(addresses)).
+		Int("valid_addresses", len(validAddresses)).
 		Int("farcaster_users_found", len(farcasterUsers)).
 		Str("duration", elapsed.String()).
 		Msg("Farcaster metadata processing completed successfully")
@@ -229,6 +237,82 @@ func (fp *FarcasterProcessor) GetMetadata(censusRoot types.HexBytes) (*Farcaster
 // HasMetadata checks if Farcaster metadata exists for a census root
 func (fp *FarcasterProcessor) HasMetadata(censusRoot types.HexBytes) (bool, error) {
 	return fp.storage.HasMetadata(FarcasterMetadataType, censusRoot)
+}
+
+// filterValidAddresses filters out invalid addresses (zero addresses, invalid hex, etc.)
+func (fp *FarcasterProcessor) filterValidAddresses(addresses []string) []string {
+	var validAddresses []string
+
+	for _, address := range addresses {
+		// Skip empty addresses
+		if address == "" {
+			continue
+		}
+
+		// Skip zero addresses
+		if address == "0x0000000000000000000000000000000000000000000000000000000000000000" ||
+			address == "0x0000000000000000000000000000000000000000" {
+			log.Debug().
+				Str("address", address).
+				Msg("Skipping zero address")
+			continue
+		}
+
+		// Ensure address has proper 0x prefix
+		if !strings.HasPrefix(address, "0x") {
+			address = "0x" + address
+		}
+
+		// Skip addresses that are too short (less than 40 hex chars + 0x prefix)
+		if len(address) < 42 {
+			log.Debug().
+				Str("address", address).
+				Msg("Skipping address that is too short")
+			continue
+		}
+
+		// Skip addresses that are too long (more than 42 chars)
+		if len(address) > 42 {
+			log.Debug().
+				Str("address", address).
+				Msg("Skipping address that is too long")
+			continue
+		}
+
+		// Validate hex format (basic check)
+		hexPart := address[2:] // Remove 0x prefix
+		if len(hexPart) != 40 {
+			log.Debug().
+				Str("address", address).
+				Msg("Skipping address with invalid length")
+			continue
+		}
+
+		// Check if all characters are valid hex
+		validHex := true
+		for _, char := range hexPart {
+			if (char < '0' || char > '9') && (char < 'a' || char > 'f') && (char < 'A' || char > 'F') {
+				validHex = false
+				break
+			}
+		}
+
+		if !validHex {
+			log.Debug().
+				Str("address", address).
+				Msg("Skipping address with invalid hex characters")
+			continue
+		}
+
+		validAddresses = append(validAddresses, address)
+	}
+
+	log.Debug().
+		Int("original_count", len(addresses)).
+		Int("valid_count", len(validAddresses)).
+		Msg("Address filtering completed")
+
+	return validAddresses
 }
 
 // DeleteMetadata removes Farcaster metadata for a census root
