@@ -53,9 +53,15 @@ type KVSnapshot struct {
 	DisplayAvatar    string                 `json:"displayAvatar"` // Avatar URL for visual representation
 }
 
-// AddressPage represents a page of addresses for a census
+// AddressEntry represents an address with its weight
+type AddressEntry struct {
+	Address string  `json:"address"` // Ethereum address
+	Weight  float64 `json:"weight"`  // Voting weight for this address
+}
+
+// AddressPage represents a page of addresses with weights for a census
 type AddressPage struct {
-	Addresses []string `json:"addresses"` // List of Ethereum addresses
+	Entries []AddressEntry `json:"entries"` // List of address-weight pairs
 }
 
 // KVSnapshotStorage manages persistent storage of snapshots using KV database
@@ -541,19 +547,19 @@ func (s *KVSnapshotStorage) DeleteMetadata(metadataType string, censusRoot types
 	return wtx.Commit()
 }
 
-// StoreAddressPage stores a page of addresses for a census root
-func (s *KVSnapshotStorage) StoreAddressPage(censusRoot types.HexBytes, pageNumber int, addresses []string) error {
-	if len(addresses) == 0 {
+// StoreAddressPage stores a page of address entries for a census root
+func (s *KVSnapshotStorage) StoreAddressPage(censusRoot types.HexBytes, pageNumber int, entries []AddressEntry) error {
+	if len(entries) == 0 {
 		return nil // Nothing to store
 	}
 
 	key := fmt.Sprintf("%s%s_%d", addressListPrefix, censusRoot.String(), pageNumber)
 
 	page := AddressPage{
-		Addresses: addresses,
+		Entries: entries,
 	}
 
-	// Serialize page to JSON for space efficiency
+	// Serialize page to GOB for space efficiency
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(page); err != nil {
 		return fmt.Errorf("failed to encode address page: %w", err)
@@ -591,13 +597,20 @@ func (s *KVSnapshotStorage) GetAddressPage(censusRoot types.HexBytes, pageNumber
 
 // GetAllAddresses retrieves all addresses for a census root by iterating through all pages
 func (s *KVSnapshotStorage) GetAllAddresses(censusRoot types.HexBytes) ([]string, error) {
+	addresses, _, err := s.GetAllAddressesAndWeights(censusRoot)
+	return addresses, err
+}
+
+// GetAllAddressesAndWeights retrieves all addresses and weights for a census root by iterating through all pages
+func (s *KVSnapshotStorage) GetAllAddressesAndWeights(censusRoot types.HexBytes) ([]string, map[string]float64, error) {
 	var allAddresses []string
+	weights := make(map[string]float64)
 	pageNumber := 0
 
 	for {
 		page, err := s.GetAddressPage(censusRoot, pageNumber)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get address page %d: %w", pageNumber, err)
+			return nil, nil, fmt.Errorf("failed to get address page %d: %w", pageNumber, err)
 		}
 
 		if page == nil {
@@ -605,7 +618,10 @@ func (s *KVSnapshotStorage) GetAllAddresses(censusRoot types.HexBytes) ([]string
 			break
 		}
 
-		allAddresses = append(allAddresses, page.Addresses...)
+		for _, entry := range page.Entries {
+			allAddresses = append(allAddresses, entry.Address)
+			weights[entry.Address] = entry.Weight
+		}
 		pageNumber++
 	}
 
@@ -613,9 +629,9 @@ func (s *KVSnapshotStorage) GetAllAddresses(censusRoot types.HexBytes) ([]string
 		Str("census_root", censusRoot.String()).
 		Int("total_addresses", len(allAddresses)).
 		Int("pages_loaded", pageNumber).
-		Msg("Loaded all addresses from storage")
+		Msg("Loaded all addresses and weights from storage")
 
-	return allAddresses, nil
+	return allAddresses, weights, nil
 }
 
 // GetAddressListPageCount returns the number of pages for a census root's address list

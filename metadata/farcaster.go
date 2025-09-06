@@ -175,8 +175,10 @@ func (fp *FarcasterProcessor) extractAddressesAndWeights(censusRef *censusdb.Cen
 }
 
 // processFarcasterUsers processes Neynar API results and creates FarcasterUser objects
+// Aggregates weights for users who control multiple addresses
 func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]neynar.User, weights map[string]float64) []FarcasterUser {
-	var farcasterUsers []FarcasterUser
+	// Group users by FID to aggregate weights for multiple addresses
+	userAggregation := make(map[int64]*FarcasterUserAggregation)
 
 	for address, users := range neynarUsers {
 		// Normalize address for lookup (ensure consistent format)
@@ -195,24 +197,54 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 			}
 		}
 
-		// Process each user for this address (there can be multiple users per address)
+		// Process each user for this address
 		for _, user := range users {
-			farcasterUser := FarcasterUser{
-				Username: user.Username,
-				Weight:   weight,
-				FID:      user.FID,
-				Address:  address,
+			if existing, exists := userAggregation[user.FID]; exists {
+				// User already exists, aggregate the weight
+				existing.TotalWeight += weight
+				existing.Addresses = append(existing.Addresses, address)
+			} else {
+				// New user, create aggregation entry
+				userAggregation[user.FID] = &FarcasterUserAggregation{
+					Username:    user.Username,
+					FID:         user.FID,
+					TotalWeight: weight,
+					Addresses:   []string{address},
+				}
 			}
-			farcasterUsers = append(farcasterUsers, farcasterUser)
 		}
+	}
+
+	// Convert aggregated data to final FarcasterUser objects
+	var farcasterUsers []FarcasterUser
+	for _, aggregation := range userAggregation {
+		// Use the first address as the primary address for display
+		primaryAddress := aggregation.Addresses[0]
+
+		farcasterUser := FarcasterUser{
+			Username: aggregation.Username,
+			Weight:   aggregation.TotalWeight,
+			FID:      aggregation.FID,
+			Address:  primaryAddress,
+		}
+		farcasterUsers = append(farcasterUsers, farcasterUser)
 	}
 
 	log.Debug().
 		Int("total_users", len(farcasterUsers)).
 		Int("unique_addresses", len(neynarUsers)).
-		Msg("Processed Farcaster users from Neynar API results")
+		Int("aggregated_users", len(userAggregation)).
+		Msg("Processed and aggregated Farcaster users from Neynar API results")
 
 	return farcasterUsers
+}
+
+// FarcasterUserAggregation is used internally to aggregate weights for users with multiple addresses
+type FarcasterUserAggregation struct {
+	Username    string
+	FID         int64
+	TotalWeight float64
+	Addresses   []string
 }
 
 // GetMetadata retrieves Farcaster metadata for a census root

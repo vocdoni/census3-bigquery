@@ -778,8 +778,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 		batchSize = DefaultBatchSize
 	}
 
-	// Collect addresses in memory during streaming (we'll store them with the final census root)
-	var collectedAddresses []string
+	// Collect address-weight pairs in memory during streaming (we'll store them with the final census root)
+	var collectedEntries []storage.AddressEntry
 	storeAddresses := qr.config.GetStoreAddresses()
 
 	// Create channels for streaming
@@ -809,8 +809,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 					totalProcessed += len(batch)
 				}
 
-				// Store collected addresses with the final census root
-				if storeAddresses && len(collectedAddresses) > 0 {
+				// Store collected address-weight entries with the final census root
+				if storeAddresses && len(collectedEntries) > 0 {
 					finalCensusRoot := types.HexBytes(censusRef.Root())
 					addressCollector := NewAddressCollector(
 						qr.service.kvStorage,
@@ -819,14 +819,15 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 						true, // enabled
 					)
 
-					// Add all collected addresses
-					for _, address := range collectedAddresses {
-						if err := addressCollector.AddAddress(address); err != nil {
+					// Add all collected address-weight entries
+					for _, entry := range collectedEntries {
+						if err := addressCollector.AddAddressWithWeight(entry.Address, entry.Weight); err != nil {
 							log.Warn().
 								Err(err).
-								Str("address", address).
+								Str("address", entry.Address).
+								Float64("weight", entry.Weight).
 								Str("query", queryID).
-								Msg("Failed to store collected address")
+								Msg("Failed to store collected address-weight entry")
 						}
 					}
 
@@ -840,8 +841,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 						log.Info().
 							Str("query", queryID).
 							Str("census_root", finalCensusRoot.String()).
-							Int("addresses_stored", len(collectedAddresses)).
-							Msg("Successfully stored addresses for metadata processing")
+							Int("entries_stored", len(collectedEntries)).
+							Msg("Successfully stored addresses and weights for metadata processing")
 					}
 				}
 
@@ -857,9 +858,15 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				return totalProcessed, nil
 			}
 
-			// Collect original address for metadata processing (in memory)
+			// Collect original address and weight for metadata processing (in memory)
 			if storeAddresses {
-				collectedAddresses = append(collectedAddresses, participant.Address.Hex())
+				// Convert BigInt balance to float64 for storage
+				weightFloat, _ := participant.Balance.Float64()
+				entry := storage.AddressEntry{
+					Address: participant.Address.Hex(),
+					Weight:  weightFloat,
+				}
+				collectedEntries = append(collectedEntries, entry)
 			}
 
 			// Hash the address key for the census
@@ -1129,8 +1136,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 		batchSize = DefaultBatchSize
 	}
 
-	// Collect addresses in memory during streaming (we'll store them with the final census root)
-	var collectedAddresses []string
+	// Collect address-weight pairs in memory during streaming (we'll store them with the final census root)
+	var collectedEntries []storage.AddressEntry
 	storeAddresses := qr.config.GetStoreAddresses()
 
 	// Create channels for streaming
@@ -1160,8 +1167,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 					totalProcessed += len(batch)
 				}
 
-				// Store collected addresses with the final census root
-				if storeAddresses && len(collectedAddresses) > 0 {
+				// Store collected address-weight entries with the final census root
+				if storeAddresses && len(collectedEntries) > 0 {
 					finalCensusRoot := types.HexBytes(censusRef.Root())
 					addressCollector := NewAddressCollector(
 						qr.service.kvStorage,
@@ -1170,14 +1177,15 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 						true, // enabled
 					)
 
-					// Add all collected addresses
-					for _, address := range collectedAddresses {
-						if err := addressCollector.AddAddress(address); err != nil {
+					// Add all collected address-weight entries
+					for _, entry := range collectedEntries {
+						if err := addressCollector.AddAddressWithWeight(entry.Address, entry.Weight); err != nil {
 							log.Warn().
 								Err(err).
-								Str("address", address).
+								Str("address", entry.Address).
+								Float64("weight", entry.Weight).
 								Str("query", queryID).
-								Msg("Failed to store collected address")
+								Msg("Failed to store collected address-weight entry")
 						}
 					}
 
@@ -1191,8 +1199,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 						log.Info().
 							Str("query", queryID).
 							Str("census_root", finalCensusRoot.String()).
-							Int("addresses_stored", len(collectedAddresses)).
-							Msg("Successfully stored addresses for metadata processing")
+							Int("entries_stored", len(collectedEntries)).
+							Msg("Successfully stored addresses and weights for metadata processing")
 					}
 				}
 
@@ -1208,9 +1216,15 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				return totalProcessed, nil
 			}
 
-			// Collect original address for metadata processing (in memory)
+			// Collect original address and weight for metadata processing (in memory)
 			if storeAddresses {
-				collectedAddresses = append(collectedAddresses, participant.Address.Hex())
+				// Convert BigInt balance to float64 for storage
+				weightFloat, _ := participant.Balance.Float64()
+				entry := storage.AddressEntry{
+					Address: participant.Address.Hex(),
+					Weight:  weightFloat,
+				}
+				collectedEntries = append(collectedEntries, entry)
 			}
 
 			// Hash the address key for the census
@@ -1287,7 +1301,7 @@ func convertAlchemyWeightConfig(cfg config.WeightConfig) alchemy.WeightConfig {
 	}
 }
 
-// extractOriginalAddressesAndWeights extracts original addresses from stored address list
+// extractOriginalAddressesAndWeights extracts original addresses and weights from stored address list
 func (qr *QueryRunner) extractOriginalAddressesAndWeights(censusRoot types.HexBytes) ([]string, map[string]float64, error) {
 	// Check if address list exists for this census
 	hasAddressList, err := qr.service.kvStorage.HasAddressList(censusRoot)
@@ -1299,27 +1313,20 @@ func (qr *QueryRunner) extractOriginalAddressesAndWeights(censusRoot types.HexBy
 		return nil, nil, fmt.Errorf("no address list found for census root - address storage may be disabled")
 	}
 
-	// Get all stored addresses
-	addresses, err := qr.service.kvStorage.GetAllAddresses(censusRoot)
+	// Get all stored addresses and weights
+	addresses, weights, err := qr.service.kvStorage.GetAllAddressesAndWeights(censusRoot)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get stored addresses: %w", err)
+		return nil, nil, fmt.Errorf("failed to get stored addresses and weights: %w", err)
 	}
 
 	if len(addresses) == 0 {
 		return nil, nil, fmt.Errorf("address list is empty")
 	}
 
-	// For now, we'll create a simple weight map with equal weights
-	// In a more sophisticated implementation, we could store weights alongside addresses
-	weights := make(map[string]float64)
-	for _, address := range addresses {
-		weights[address] = 1.0 // Default weight - this could be improved
-	}
-
 	log.Debug().
 		Str("census_root", censusRoot.String()).
 		Int("addresses_loaded", len(addresses)).
-		Msg("Successfully loaded addresses from storage for metadata processing")
+		Msg("Successfully loaded addresses and weights from storage for metadata processing")
 
 	return addresses, weights, nil
 }
