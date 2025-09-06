@@ -778,14 +778,9 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 		batchSize = DefaultBatchSize
 	}
 
-	// Create address collector for parallel address storage
-	censusRoot := types.HexBytes(censusRef.Root())
-	addressCollector := NewAddressCollector(
-		qr.service.kvStorage,
-		censusRoot,
-		storage.DefaultAddressPageSize,
-		qr.config.GetStoreAddresses(),
-	)
+	// Collect addresses in memory during streaming (we'll store them with the final census root)
+	var collectedAddresses []string
+	storeAddresses := qr.config.GetStoreAddresses()
 
 	// Create channels for streaming
 	participantCh := make(chan bigquery.Participant, batchSize)
@@ -814,12 +809,40 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 					totalProcessed += len(batch)
 				}
 
-				// Finalize address collection
-				if err := addressCollector.Finalize(); err != nil {
-					log.Warn().
-						Err(err).
-						Str("query", queryID).
-						Msg("Failed to finalize address collection")
+				// Store collected addresses with the final census root
+				if storeAddresses && len(collectedAddresses) > 0 {
+					finalCensusRoot := types.HexBytes(censusRef.Root())
+					addressCollector := NewAddressCollector(
+						qr.service.kvStorage,
+						finalCensusRoot,
+						storage.DefaultAddressPageSize,
+						true, // enabled
+					)
+
+					// Add all collected addresses
+					for _, address := range collectedAddresses {
+						if err := addressCollector.AddAddress(address); err != nil {
+							log.Warn().
+								Err(err).
+								Str("address", address).
+								Str("query", queryID).
+								Msg("Failed to store collected address")
+						}
+					}
+
+					// Finalize address collection
+					if err := addressCollector.Finalize(); err != nil {
+						log.Warn().
+							Err(err).
+							Str("query", queryID).
+							Msg("Failed to finalize address collection")
+					} else {
+						log.Info().
+							Str("query", queryID).
+							Str("census_root", finalCensusRoot.String()).
+							Int("addresses_stored", len(collectedAddresses)).
+							Msg("Successfully stored addresses for metadata processing")
+					}
 				}
 
 				elapsed := time.Since(startTime)
@@ -834,13 +857,9 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				return totalProcessed, nil
 			}
 
-			// Collect original address for metadata processing
-			if err := addressCollector.AddAddress(participant.Address.Hex()); err != nil {
-				log.Warn().
-					Err(err).
-					Str("address", participant.Address.Hex()).
-					Str("query", queryID).
-					Msg("Failed to collect address for storage")
+			// Collect original address for metadata processing (in memory)
+			if storeAddresses {
+				collectedAddresses = append(collectedAddresses, participant.Address.Hex())
 			}
 
 			// Hash the address key for the census
@@ -1110,14 +1129,9 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 		batchSize = DefaultBatchSize
 	}
 
-	// Create address collector for parallel address storage
-	censusRoot := types.HexBytes(censusRef.Root())
-	addressCollector := NewAddressCollector(
-		qr.service.kvStorage,
-		censusRoot,
-		storage.DefaultAddressPageSize,
-		qr.config.GetStoreAddresses(),
-	)
+	// Collect addresses in memory during streaming (we'll store them with the final census root)
+	var collectedAddresses []string
+	storeAddresses := qr.config.GetStoreAddresses()
 
 	// Create channels for streaming
 	participantCh := make(chan alchemy.Participant, batchSize)
@@ -1146,12 +1160,40 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 					totalProcessed += len(batch)
 				}
 
-				// Finalize address collection
-				if err := addressCollector.Finalize(); err != nil {
-					log.Warn().
-						Err(err).
-						Str("query", queryID).
-						Msg("Failed to finalize address collection")
+				// Store collected addresses with the final census root
+				if storeAddresses && len(collectedAddresses) > 0 {
+					finalCensusRoot := types.HexBytes(censusRef.Root())
+					addressCollector := NewAddressCollector(
+						qr.service.kvStorage,
+						finalCensusRoot,
+						storage.DefaultAddressPageSize,
+						true, // enabled
+					)
+
+					// Add all collected addresses
+					for _, address := range collectedAddresses {
+						if err := addressCollector.AddAddress(address); err != nil {
+							log.Warn().
+								Err(err).
+								Str("address", address).
+								Str("query", queryID).
+								Msg("Failed to store collected address")
+						}
+					}
+
+					// Finalize address collection
+					if err := addressCollector.Finalize(); err != nil {
+						log.Warn().
+							Err(err).
+							Str("query", queryID).
+							Msg("Failed to finalize address collection")
+					} else {
+						log.Info().
+							Str("query", queryID).
+							Str("census_root", finalCensusRoot.String()).
+							Int("addresses_stored", len(collectedAddresses)).
+							Msg("Successfully stored addresses for metadata processing")
+					}
 				}
 
 				elapsed := time.Since(startTime)
@@ -1166,13 +1208,9 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				return totalProcessed, nil
 			}
 
-			// Collect original address for metadata processing
-			if err := addressCollector.AddAddress(participant.Address.Hex()); err != nil {
-				log.Warn().
-					Err(err).
-					Str("address", participant.Address.Hex()).
-					Str("query", queryID).
-					Msg("Failed to collect address for storage")
+			// Collect original address for metadata processing (in memory)
+			if storeAddresses {
+				collectedAddresses = append(collectedAddresses, participant.Address.Hex())
 			}
 
 			// Hash the address key for the census
