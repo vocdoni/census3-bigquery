@@ -143,13 +143,13 @@ func TestFarcasterProcessorWithMockNeynar(t *testing.T) {
 		c.Assert(err, quicktest.IsNil)
 	}
 
-	// Test extractAddressesAndWeights method
-	addresses, weights, err := processor.extractAddressesAndWeights(censusRef)
-	c.Assert(err, quicktest.IsNil)
-	c.Assert(len(addresses), quicktest.Not(quicktest.Equals), 0) // Should have some addresses
-	c.Assert(len(weights), quicktest.Equals, len(addresses))     // Weights should match addresses
+	// Create proper weights map with original addresses (not hashed)
+	weights := map[string]float64{
+		testAddresses[0]: 100.5, // Real weight for first address
+		testAddresses[1]: 75.2,  // Real weight for second address
+	}
 
-	// Test processFarcasterUsers method
+	// Test processFarcasterUsers method with proper weights
 	mockNeynarUsers := map[string][]neynar.User{
 		testAddresses[0]: {
 			{
@@ -175,6 +175,80 @@ func TestFarcasterProcessorWithMockNeynar(t *testing.T) {
 	}
 	c.Assert(usernames["testuser1"], quicktest.IsTrue)
 	c.Assert(usernames["testuser2"], quicktest.IsTrue)
+}
+
+func TestFarcasterWeightAggregation(t *testing.T) {
+	c := quicktest.New(t)
+
+	// Create test database
+	database, err := metadb.New(db.TypePebble, t.TempDir())
+	c.Assert(err, quicktest.IsNil)
+
+	// Create storage
+	kvStorage := storage.NewKVSnapshotStorage(database)
+
+	// Create Farcaster processor
+	processor := NewFarcasterProcessor(nil, kvStorage)
+
+	// Test addresses - alice controls two addresses, bob controls one
+	testAddresses := []string{
+		"0xe1b8799659bE5d41a0e57E179d6cB42E00B9211C", // Alice's first address
+		"0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6", // Alice's second address
+		"0x8ba1f109551bD432803012645Hac136c",         // Bob's address
+	}
+
+	// Create weights map with different weights for each address
+	weights := map[string]float64{
+		testAddresses[0]: 150.5, // Alice's first address weight
+		testAddresses[1]: 75.2,  // Alice's second address weight
+		testAddresses[2]: 200.0, // Bob's address weight
+	}
+
+	// Mock Neynar response - Alice appears for two addresses, Bob for one
+	mockNeynarUsers := map[string][]neynar.User{
+		testAddresses[0]: {
+			{
+				Username: "alice",
+				FID:      12345, // Same FID for Alice
+			},
+		},
+		testAddresses[1]: {
+			{
+				Username: "alice",
+				FID:      12345, // Same FID for Alice (should be aggregated)
+			},
+		},
+		testAddresses[2]: {
+			{
+				Username: "bob",
+				FID:      67890, // Different FID for Bob
+			},
+		},
+	}
+
+	// Process users and test aggregation
+	farcasterUsers := processor.processFarcasterUsers(mockNeynarUsers, weights)
+	c.Assert(len(farcasterUsers), quicktest.Equals, 2) // Should have 2 unique users
+
+	// Find Alice and Bob in the results
+	var alice, bob *FarcasterUser
+	for i := range farcasterUsers {
+		if farcasterUsers[i].Username == "alice" {
+			alice = &farcasterUsers[i]
+		} else if farcasterUsers[i].Username == "bob" {
+			bob = &farcasterUsers[i]
+		}
+	}
+
+	// Verify Alice's weight is aggregated (150.5 + 75.2 = 225.7)
+	c.Assert(alice, quicktest.Not(quicktest.IsNil))
+	c.Assert(alice.Weight, quicktest.Equals, 225.7)
+	c.Assert(alice.FID, quicktest.Equals, int64(12345))
+
+	// Verify Bob's weight is not aggregated (just 200.0)
+	c.Assert(bob, quicktest.Not(quicktest.IsNil))
+	c.Assert(bob.Weight, quicktest.Equals, 200.0)
+	c.Assert(bob.FID, quicktest.Equals, int64(67890))
 }
 
 func TestFarcasterConfigHelpers(t *testing.T) {

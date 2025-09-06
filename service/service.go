@@ -1323,10 +1323,27 @@ func (qr *QueryRunner) extractOriginalAddressesAndWeights(censusRoot types.HexBy
 		return nil, nil, fmt.Errorf("address list is empty")
 	}
 
+	// Debug log some sample weights to verify they're being stored correctly
+	sampleCount := 5
+	if len(addresses) < sampleCount {
+		sampleCount = len(addresses)
+	}
+
 	log.Debug().
 		Str("census_root", censusRoot.String()).
 		Int("addresses_loaded", len(addresses)).
 		Msg("Successfully loaded addresses and weights from storage for metadata processing")
+
+	// Log sample weights for debugging
+	for i := 0; i < sampleCount; i++ {
+		addr := addresses[i]
+		weight := weights[addr]
+		log.Debug().
+			Str("sample_address", addr).
+			Float64("sample_weight", weight).
+			Int("sample_index", i).
+			Msg("Sample address-weight pair from storage")
+	}
 
 	return addresses, weights, nil
 }

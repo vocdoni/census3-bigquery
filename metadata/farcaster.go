@@ -180,29 +180,84 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 	// Group users by FID to aggregate weights for multiple addresses
 	userAggregation := make(map[int64]*FarcasterUserAggregation)
 
+	log.Debug().
+		Int("neynar_addresses", len(neynarUsers)).
+		Int("weight_entries", len(weights)).
+		Msg("Starting Farcaster user processing and weight aggregation")
+
 	for address, users := range neynarUsers {
-		// Normalize address for lookup (ensure consistent format)
-		normalizedAddress := strings.ToLower(address)
-		if !strings.HasPrefix(normalizedAddress, "0x") {
-			normalizedAddress = "0x" + normalizedAddress
+		// Try multiple address formats to find the weight
+		var weight float64
+		var weightFound bool
+
+		// Try exact address format first
+		if w, exists := weights[address]; exists {
+			weight = w
+			weightFound = true
+			log.Debug().
+				Str("address", address).
+				Float64("weight", weight).
+				Msg("Found weight with exact address format")
+		} else {
+			// Try normalized lowercase format
+			normalizedAddress := strings.ToLower(address)
+			if !strings.HasPrefix(normalizedAddress, "0x") {
+				normalizedAddress = "0x" + normalizedAddress
+			}
+			if w, exists := weights[normalizedAddress]; exists {
+				weight = w
+				weightFound = true
+				log.Debug().
+					Str("address", address).
+					Str("normalized", normalizedAddress).
+					Float64("weight", weight).
+					Msg("Found weight with normalized address format")
+			} else {
+				// Try all stored addresses to find a case-insensitive match
+				for storedAddr, w := range weights {
+					if strings.EqualFold(address, storedAddr) {
+						weight = w
+						weightFound = true
+						log.Debug().
+							Str("address", address).
+							Str("stored_addr", storedAddr).
+							Float64("weight", weight).
+							Msg("Found weight with case-insensitive match")
+						break
+					}
+				}
+			}
 		}
 
-		// Get weight for this address
-		weight, exists := weights[normalizedAddress]
-		if !exists {
-			// Try original address format
-			weight, exists = weights[address]
-			if !exists {
-				weight = 1.0 // Default weight
-			}
+		if !weightFound {
+			weight = 1.0 // Default weight
+			log.Warn().
+				Str("address", address).
+				Float64("default_weight", weight).
+				Msg("No weight found for address, using default")
 		}
 
 		// Process each user for this address
 		for _, user := range users {
+			log.Debug().
+				Str("address", address).
+				Str("username", user.Username).
+				Int64("fid", user.FID).
+				Float64("weight", weight).
+				Msg("Processing user for address")
+
 			if existing, exists := userAggregation[user.FID]; exists {
 				// User already exists, aggregate the weight
+				oldWeight := existing.TotalWeight
 				existing.TotalWeight += weight
 				existing.Addresses = append(existing.Addresses, address)
+				log.Debug().
+					Str("username", user.Username).
+					Int64("fid", user.FID).
+					Float64("old_weight", oldWeight).
+					Float64("added_weight", weight).
+					Float64("new_total", existing.TotalWeight).
+					Msg("Aggregated weight for existing user")
 			} else {
 				// New user, create aggregation entry
 				userAggregation[user.FID] = &FarcasterUserAggregation{
@@ -211,6 +266,11 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 					TotalWeight: weight,
 					Addresses:   []string{address},
 				}
+				log.Debug().
+					Str("username", user.Username).
+					Int64("fid", user.FID).
+					Float64("initial_weight", weight).
+					Msg("Created new user aggregation")
 			}
 		}
 	}
@@ -228,9 +288,17 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 			Address:  primaryAddress,
 		}
 		farcasterUsers = append(farcasterUsers, farcasterUser)
+
+		log.Debug().
+			Str("username", farcasterUser.Username).
+			Int64("fid", farcasterUser.FID).
+			Float64("final_weight", farcasterUser.Weight).
+			Int("address_count", len(aggregation.Addresses)).
+			Str("primary_address", primaryAddress).
+			Msg("Created final Farcaster user entry")
 	}
 
-	log.Debug().
+	log.Info().
 		Int("total_users", len(farcasterUsers)).
 		Int("unique_addresses", len(neynarUsers)).
 		Int("aggregated_users", len(userAggregation)).
