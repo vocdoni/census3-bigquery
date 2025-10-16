@@ -2,9 +2,13 @@ package api
 
 import (
 	"bytes"
+	"census3-bigquery/censusdb"
+	"census3-bigquery/log"
+	"census3-bigquery/storage"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,12 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
-	"github.com/vocdoni/arbo"
 	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/censusdb"
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
 )
 
 // SnapshotStorage interface for storage operations
@@ -111,6 +110,11 @@ type PaginationParams struct {
 const (
 	DefaultPageSize = 20
 	MaxPageSize     = 100
+)
+
+// Weight strategy constants
+const (
+	WeightStrategyConstant = "constant"
 )
 
 // NewServer creates a new API server
@@ -266,11 +270,11 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	for i, snapshot := range paginatedSnapshots {
 		response := SnapshotResponse{
 			SnapshotDate:     snapshot.SnapshotDate.Format(time.RFC3339),
+			CreatedAt:        time.Now().Format(time.RFC3339),
 			CensusRoot:       snapshot.CensusRoot.String(),
 			ParticipantCount: snapshot.ParticipantCount,
 			MinBalance:       snapshot.MinBalance,
 			QueryName:        snapshot.QueryName,
-			CreatedAt:        snapshot.CreatedAt.Format(time.RFC3339),
 			DisplayName:      snapshot.DisplayName,
 			DisplayAvatar:    snapshot.DisplayAvatar,
 			WeightStrategy:   mapWeightStrategy(snapshot.WeightConfig),
@@ -327,11 +331,11 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Convert to response format
 	response := SnapshotResponse{
 		SnapshotDate:     latest.SnapshotDate.Format(time.RFC3339),
+		CreatedAt:        time.Now().Format(time.RFC3339),
 		CensusRoot:       latest.CensusRoot.String(),
 		ParticipantCount: latest.ParticipantCount,
 		MinBalance:       latest.MinBalance,
 		QueryName:        latest.QueryName,
-		CreatedAt:        latest.CreatedAt.Format(time.RFC3339),
 		DisplayName:      latest.DisplayName,
 		DisplayAvatar:    latest.DisplayAvatar,
 		WeightStrategy:   mapWeightStrategy(latest.WeightConfig),
@@ -545,15 +549,15 @@ func (s *Server) handleAddParticipants(w http.ResponseWriter, r *http.Request) {
 		// Process key (hash if too long)
 		key := []byte(participant.Key)
 		if len(key) > censusdb.CensusKeyMaxLen {
-			key = s.censusDB.HashAndTrunkKey(key)
+			key = s.censusDB.TrunkKey(key)
 			if key == nil {
-				ErrGenericInternalServerError.With("failed to hash participant key").Write(w)
+				ErrGenericInternalServerError.With("failed to trunk participant key").Write(w)
 				return
 			}
 		}
 
 		keys[i] = key
-		values[i] = arbo.BigIntToBytes(s.censusDB.HashLen(), participant.Weight.MathBigInt())
+		values[i] = bigIntToBytes(s.censusDB.HashLen(), participant.Weight.MathBigInt())
 	}
 
 	// Insert batch
@@ -722,16 +726,16 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 // mapWeightStrategy maps internal weight strategy to API response format
 func mapWeightStrategy(weightConfig *storage.WeightConfig) string {
 	if weightConfig == nil || weightConfig.Strategy == "" {
-		return "constant"
+		return WeightStrategyConstant
 	}
 
 	switch weightConfig.Strategy {
-	case "constant":
-		return "constant"
+	case WeightStrategyConstant:
+		return WeightStrategyConstant
 	case "proportional_auto", "proportional_manual":
 		return "proportional"
 	default:
-		return "constant"
+		return WeightStrategyConstant
 	}
 }
 
@@ -769,6 +773,30 @@ func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request)
 		ErrGenericInternalServerError.WithErr(err).Write(w)
 		return
 	}
+}
+
+// bigIntToBytes converts a big.Int to a byte slice of the specified length in big-endian format.
+// Big-endian is used for Ethereum/Solidity compatibility.
+func bigIntToBytes(length int, value *big.Int) []byte {
+	if value == nil {
+		return make([]byte, length)
+	}
+
+	// Get bytes from big.Int (already big-endian from Go)
+	valueBytes := value.Bytes()
+
+	// Create result with fixed length, padding with zeros on the left
+	result := make([]byte, length)
+
+	// Copy value bytes to the end (right-aligned, big-endian)
+	if len(valueBytes) <= length {
+		copy(result[length-len(valueBytes):], valueBytes)
+	} else {
+		// If value is too large, copy only the least significant bytes
+		copy(result, valueBytes[len(valueBytes)-length:])
+	}
+
+	return result
 }
 
 // corsMiddleware adds CORS headers to responses

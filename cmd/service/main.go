@@ -1,18 +1,16 @@
 package main
 
 import (
-	"os"
-
-	"github.com/spf13/pflag"
-
 	"census3-bigquery/bigquery"
 	"census3-bigquery/config"
 	"census3-bigquery/log"
 	"census3-bigquery/service"
+	"os"
+
+	"github.com/spf13/pflag"
 )
 
 func main() {
-
 	// Add list-queries flag to the config flags
 	pflag.Bool("list-queries", false, "List available BigQuery queries and exit")
 

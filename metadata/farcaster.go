@@ -1,21 +1,17 @@
 package metadata
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"math/big"
-	"strings"
-	"time"
-
-	"github.com/vocdoni/arbo"
-	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/censusdb"
 	"census3-bigquery/config"
 	"census3-bigquery/log"
 	"census3-bigquery/neynar"
 	"census3-bigquery/storage"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/vocdoni/davinci-node/types"
 )
 
 const (
@@ -128,50 +124,6 @@ func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRoot type
 		Msg("Farcaster metadata processing completed successfully")
 
 	return nil
-}
-
-// extractAddressesAndWeights extracts all addresses and their weights from a census
-func (fp *FarcasterProcessor) extractAddressesAndWeights(censusRef *censusdb.CensusRef) ([]string, map[string]float64, error) {
-	// Get the tree from the census reference
-	tree := censusRef.Tree()
-	if tree == nil {
-		return nil, nil, fmt.Errorf("census tree is nil")
-	}
-
-	var addresses []string
-	weights := make(map[string]float64)
-
-	// Iterate through all keys in the tree
-	err := tree.Iterate(nil, func(key []byte, value []byte) {
-		// Convert key to address string (assuming it's already an address or hash)
-		address := fmt.Sprintf("0x%x", key)
-		addresses = append(addresses, address)
-
-		// Convert value (weight) from bytes to float64
-		if len(value) > 0 {
-			// The value is stored as big.Int bytes, convert it back
-			weightBigInt := arbo.BytesToBigInt(value)
-			if weightBigInt != nil {
-				// Convert to float64 for easier handling
-				weightFloat, _ := new(big.Float).SetInt(weightBigInt).Float64()
-				weights[address] = weightFloat
-			} else {
-				weights[address] = 1.0 // Default weight if conversion fails
-			}
-		} else {
-			weights[address] = 1.0 // Default weight if no value
-		}
-	})
-
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to iterate census tree: %w", err)
-	}
-
-	log.Debug().
-		Int("addresses_extracted", len(addresses)).
-		Msg("Successfully extracted addresses and weights from census")
-
-	return addresses, weights, nil
 }
 
 // processFarcasterUsers processes Neynar API results and creates FarcasterUser objects

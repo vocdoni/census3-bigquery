@@ -1,6 +1,10 @@
 package metadata
 
 import (
+	"census3-bigquery/censusdb"
+	"census3-bigquery/config"
+	"census3-bigquery/neynar"
+	"census3-bigquery/storage"
 	"encoding/json"
 	"testing"
 	"time"
@@ -10,11 +14,6 @@ import (
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/censusdb"
-	"census3-bigquery/config"
-	"census3-bigquery/neynar"
-	"census3-bigquery/storage"
 )
 
 func TestFarcasterProcessor(t *testing.T) {
@@ -44,7 +43,7 @@ func TestFarcasterProcessor(t *testing.T) {
 
 	for i, addr := range testAddresses {
 		// Hash the address key to fit within census tree limits
-		key := censusDB.HashAndTrunkKey([]byte(addr))
+		key := censusDB.TrunkKey([]byte(addr))
 		c.Assert(key, quicktest.Not(quicktest.IsNil))
 		value := []byte{byte(i + 1)} // Simple weight
 		err = censusRef.Insert(key, value)
@@ -136,7 +135,7 @@ func TestFarcasterProcessorWithMockNeynar(t *testing.T) {
 
 	for i, addr := range testAddresses {
 		// Hash the address key to fit within census tree limits
-		key := censusDB.HashAndTrunkKey([]byte(addr))
+		key := censusDB.TrunkKey([]byte(addr))
 		c.Assert(key, quicktest.Not(quicktest.IsNil))
 		value := []byte{byte(i + 1)} // Simple weight
 		err = censusRef.Insert(key, value)
@@ -233,9 +232,10 @@ func TestFarcasterWeightAggregation(t *testing.T) {
 	// Find Alice and Bob in the results
 	var alice, bob *FarcasterUser
 	for i := range farcasterUsers {
-		if farcasterUsers[i].Username == "alice" {
+		switch farcasterUsers[i].Username {
+		case "alice":
 			alice = &farcasterUsers[i]
-		} else if farcasterUsers[i].Username == "bob" {
+		case "bob":
 			bob = &farcasterUsers[i]
 		}
 	}

@@ -1,12 +1,11 @@
 package service
 
 import (
+	"census3-bigquery/log"
+	"census3-bigquery/storage"
 	"sync"
 
 	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
 )
 
 // AddressCollector manages parallel collection and storage of addresses with weights during census creation

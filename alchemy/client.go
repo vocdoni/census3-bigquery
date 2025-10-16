@@ -1,6 +1,7 @@
 package alchemy
 
 import (
+	"census3-bigquery/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,8 +15,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-
-	"census3-bigquery/log"
 )
 
 // Client wraps Alchemy API operations

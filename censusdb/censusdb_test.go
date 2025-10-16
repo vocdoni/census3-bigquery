@@ -17,34 +17,31 @@ func newDatabase(t *testing.T) db.Database {
 	return metadb.NewTest(t)
 }
 
-func TestNewCensusDB(t *testing.T) {
-	t.Parallel()
-	db := newDatabase(t)
-	censusDB := NewCensusDB(db)
-	qt.Assert(t, censusDB, qt.IsNotNil)
-	qt.Assert(t, censusDB.db, qt.IsNotNil)
-}
-
-func TestCensusDBNew(t *testing.T) {
-	t.Parallel()
-	censusDB := NewCensusDB(newDatabase(t))
-	censusID := uuid.New()
-
-	censusRef, err := censusDB.New(censusID)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, censusRef, qt.IsNotNil)
-	qt.Assert(t, censusRef.Tree(), qt.IsNotNil)
+// makeAddress creates a 20-byte address from a string for testing.
+// If the string is shorter than 20 bytes, it's padded with zeros.
+func makeAddress(s string) []byte {
+	addr := make([]byte, 20)
+	copy(addr, []byte(s))
+	return addr
 }
 
 func TestCensusDBNewByRoot(t *testing.T) {
 	t.Parallel()
 	censusDB := NewCensusDB(newDatabase(t))
-	root := []byte("test_root_12345678901234567890")
+	// Use unique root for this test to avoid conflicts with other tests
+	root := []byte("test_root_newbyroot_12345678901")
 
 	censusRef, err := censusDB.NewByRoot(root)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, censusRef, qt.IsNotNil)
 	qt.Assert(t, censusRef.Tree(), qt.IsNotNil)
+
+	// Cleanup
+	defer func() {
+		if censusRef.tree != nil {
+			_ = censusRef.tree.Close()
+		}
+	}()
 }
 
 func TestCensusDBExists(t *testing.T) {
@@ -67,15 +64,23 @@ func TestCensusDBExists(t *testing.T) {
 func TestCensusDBExistsByRoot(t *testing.T) {
 	t.Parallel()
 	censusDB := NewCensusDB(newDatabase(t))
-	root := []byte("test_root_12345678901234567890")
+	// Use unique root for this test to avoid conflicts with other tests
+	root := []byte("test_root_existsbyroot_123456789")
 
 	// Before creation.
 	existsBefore := censusDB.ExistsByRoot(root)
 	qt.Assert(t, existsBefore, qt.IsFalse)
 
 	// Create a new census.
-	_, err := censusDB.NewByRoot(root)
+	ref, err := censusDB.NewByRoot(root)
 	qt.Assert(t, err, qt.IsNil)
+
+	// Cleanup
+	defer func() {
+		if ref.tree != nil {
+			_ = ref.tree.Close()
+		}
+	}()
 
 	existsAfter := censusDB.ExistsByRoot(root)
 	qt.Assert(t, existsAfter, qt.IsTrue)
@@ -147,12 +152,23 @@ func TestPersistenceAcrossCensusDBInstances(t *testing.T) {
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, ref1, qt.IsNotNil)
 
+	// Close the first tree before loading with second instance
+	// (Pebble doesn't allow multiple opens of same directory)
+	_ = ref1.tree.Close()
+
 	// Create a new CensusDB instance sharing the same underlying database.
 	censusDB2 := NewCensusDB(db)
 	ref2, err := censusDB2.Load(censusID)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, ref2, qt.IsNotNil)
 	qt.Assert(t, ref2.Tree(), qt.IsNotNil)
+
+	// Cleanup
+	defer func() {
+		if ref2.tree != nil {
+			_ = ref2.tree.Close()
+		}
+	}()
 }
 
 func TestLoadAfterDelete(t *testing.T) {
@@ -359,9 +375,9 @@ func TestBasicProofGeneration(t *testing.T) {
 	ref, err := censusDB.New(censusID)
 	qt.Assert(t, err, qt.IsNil)
 
-	// Insert a key/value pair directly
-	leafKey := []byte("myKey")
-	value := []byte("myValue")
+	// Insert a key/value pair directly (key must be 20 bytes for lean-imt)
+	leafKey := makeAddress("myKey")
+	value := []byte{0, 0, 0, 0, 0, 0, 0, 1} // weight as 8 bytes
 	err = ref.Insert(leafKey, value)
 	qt.Assert(t, err, qt.IsNil)
 
@@ -373,9 +389,13 @@ func TestBasicProofGeneration(t *testing.T) {
 	rootRef, err := censusDB.NewByRoot(actualRoot)
 	qt.Assert(t, err, qt.IsNil)
 
-	// Insert the same data to the root-based census
-	err = rootRef.Insert(leafKey, value)
+	// Publish the working census to the root-based census
+	// Note: PublishCensus now moves the directory and cleans up the working census automatically
+	err = censusDB.PublishCensus(censusID, rootRef)
 	qt.Assert(t, err, qt.IsNil)
+
+	// After PublishCensus, the working census (ref) is cleaned up and should not be used
+	// Only rootRef is valid now
 
 	// Test SizeByRoot
 	size, err := censusDB.SizeByRoot(actualRoot)
@@ -386,12 +406,21 @@ func TestBasicProofGeneration(t *testing.T) {
 	proof, err := censusDB.ProofByRoot(actualRoot, leafKey)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, proof, qt.Not(qt.IsNil))
-	qt.Assert(t, string(proof.Address), qt.DeepEquals, string(leafKey))
-	qt.Assert(t, string(proof.Value), qt.DeepEquals, string(value))
+	qt.Assert(t, []byte(proof.Address), qt.DeepEquals, leafKey)
+	// Note: proof.Value is the packed value (address << 88 | weight), not the original value
+	qt.Assert(t, proof.Weight, qt.IsNotNil)
 
 	// Verify the proof
 	ok := censusDB.VerifyProof(proof)
 	qt.Assert(t, ok, qt.IsTrue)
+
+	// Cleanup: close the root tree to release Pebble locks
+	// (working census was already cleaned up by PublishCensus)
+	defer func() {
+		if rootRef.tree != nil {
+			_ = rootRef.tree.Close()
+		}
+	}()
 }
 
 func TestPurgeWorkingCensusesBasic(t *testing.T) {

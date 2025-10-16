@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"census3-bigquery/log"
 	"encoding/gob"
 	"fmt"
 	"sort"
@@ -9,8 +10,6 @@ import (
 
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/log"
 )
 
 const (
@@ -41,7 +40,6 @@ type KVSnapshot struct {
 	SnapshotDate     time.Time              `json:"snapshotDate"`
 	CensusRoot       types.HexBytes         `json:"censusRoot"`
 	ParticipantCount int                    `json:"participantCount"`
-	CreatedAt        time.Time              `json:"createdAt"`
 	MinBalance       float64                `json:"minBalance"`
 	QueryName        string                 `json:"queryName"`     // User-defined name for this query instance
 	QueryType        string                 `json:"queryType"`     // BigQuery query name from registry
@@ -112,7 +110,6 @@ func (s *KVSnapshotStorage) AddSnapshot(snapshotDate time.Time, censusRoot types
 		SnapshotDate:     snapshotDate,
 		CensusRoot:       censusRoot,
 		ParticipantCount: participantCount,
-		CreatedAt:        time.Now(),
 		MinBalance:       minBalance,
 		QueryName:        queryName,
 		QueryType:        queryType,
@@ -200,7 +197,6 @@ func (s *KVSnapshotStorage) Snapshots() ([]KVSnapshot, error) {
 		snapshots = append(snapshots, snapshot)
 		return true
 	})
-
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -293,7 +289,6 @@ func (s *KVSnapshotStorage) GetLatestSnapshotByQuery(queryName string) (*KVSnaps
 		}
 		return true
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to iterate snapshots: %w", err)
 	}
@@ -336,7 +331,6 @@ func (s *KVSnapshotStorage) DeleteOldSnapshots(maxAge time.Duration) (int, error
 		}
 		return true
 	})
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to iterate for deletion: %w", err)
 	}

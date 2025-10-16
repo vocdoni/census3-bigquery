@@ -1,6 +1,9 @@
 package service
 
 import (
+	"census3-bigquery/bigquery"
+	"census3-bigquery/censusdb"
+	"census3-bigquery/config"
 	"context"
 	"math/big"
 	"testing"
@@ -10,10 +13,6 @@ import (
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
 	"github.com/vocdoni/davinci-node/db/metadb"
-
-	"census3-bigquery/bigquery"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/config"
 )
 
 // mockBigQueryClient implements a mock BigQuery client for testing
@@ -100,14 +99,7 @@ func TestQueryRunnerStreamAndCreateCensus(t *testing.T) {
 	c.Assert(err, quicktest.IsNil)
 
 	// Test streaming and census creation
-	bqConfig := bigquery.Config{
-		Project:     "test-project",
-		MinBalance:  0.1,
-		QueryName:   "test_query",
-		QueryParams: queryConfig.Parameters,
-	}
-
-	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
+	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef)
 	c.Assert(err, quicktest.IsNil)
 	c.Assert(count, quicktest.Equals, len(testParticipants))
 
@@ -171,15 +163,8 @@ func TestQueryRunnerStreamAndCreateCensusWithLargeBatch(t *testing.T) {
 	c.Assert(err, quicktest.IsNil)
 
 	// Test streaming and census creation
-	bqConfig := bigquery.Config{
-		Project:     "test-project",
-		MinBalance:  0.1,
-		QueryName:   "test_query",
-		QueryParams: queryConfig.Parameters,
-	}
-
 	start := time.Now()
-	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
+	count, err := queryRunner.streamAndCreateCensusBigQuery(censusRef)
 	elapsed := time.Since(start)
 
 	c.Assert(err, quicktest.IsNil)
@@ -257,14 +242,7 @@ func TestQueryRunnerStreamAndCreateCensusContextCancellation(t *testing.T) {
 	}()
 
 	// Test streaming and census creation with cancellation
-	bqConfig := bigquery.Config{
-		Project:     "test-project",
-		MinBalance:  0.1,
-		QueryName:   "test_query",
-		QueryParams: queryConfig.Parameters,
-	}
-
-	_, err = queryRunner.streamAndCreateCensusBigQuery(censusRef, bqConfig)
+	_, err = queryRunner.streamAndCreateCensusBigQuery(censusRef)
 	c.Assert(err, quicktest.Not(quicktest.IsNil))
 	c.Assert(err.Error(), quicktest.Contains, "context cancelled")
 }

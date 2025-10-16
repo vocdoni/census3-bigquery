@@ -1,6 +1,7 @@
 package neynar
 
 import (
+	"census3-bigquery/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,8 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"census3-bigquery/log"
 )
 
 const (

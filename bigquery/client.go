@@ -1,6 +1,7 @@
 package bigquery
 
 import (
+	"census3-bigquery/log"
 	"context"
 	"fmt"
 	"math/big"
@@ -10,8 +11,6 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/api/iterator"
-
-	"census3-bigquery/log"
 )
 
 // BigQuery's column is NUMERIC (gwei), 1 ETH = 1 000 000 000 gwei.

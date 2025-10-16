@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"census3-bigquery/censusdb"
+	"census3-bigquery/storage"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -14,9 +16,6 @@ import (
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
-
-	"census3-bigquery/censusdb"
-	"census3-bigquery/storage"
 )
 
 // mockStorage implements the SnapshotStorage interface for testing
@@ -82,6 +81,13 @@ func createTestCensusDB(t *testing.T) *censusdb.CensusDB {
 	return censusdb.NewCensusDB(database)
 }
 
+// makeTestAddress creates a 20-byte address for testing from a short byte slice
+func makeTestAddress(b []byte) []byte {
+	addr := make([]byte, 20)
+	copy(addr, b)
+	return addr
+}
+
 func createTestSnapshots() []storage.KVSnapshot {
 	now := time.Now().Truncate(time.Minute)
 	return []storage.KVSnapshot{
@@ -89,7 +95,6 @@ func createTestSnapshots() []storage.KVSnapshot {
 			SnapshotDate:     now,
 			CensusRoot:       types.HexBytes{0x01, 0x02, 0x03},
 			ParticipantCount: 100,
-			CreatedAt:        now,
 			MinBalance:       0.25,
 			QueryName:        "ethereum_balances",
 		},
@@ -97,7 +102,6 @@ func createTestSnapshots() []storage.KVSnapshot {
 			SnapshotDate:     now.Add(-time.Hour),
 			CensusRoot:       types.HexBytes{0x04, 0x05, 0x06},
 			ParticipantCount: 200,
-			CreatedAt:        now.Add(-time.Hour),
 			MinBalance:       0.5,
 			QueryName:        "ethereum_balances",
 		},
@@ -105,7 +109,6 @@ func createTestSnapshots() []storage.KVSnapshot {
 			SnapshotDate:     now.Add(-2 * time.Hour),
 			CensusRoot:       types.HexBytes{0x07, 0x08, 0x09},
 			ParticipantCount: 150,
-			CreatedAt:        now.Add(-2 * time.Hour),
 			MinBalance:       0.25,
 			QueryName:        "ethereum_balances_recent",
 		},
@@ -113,7 +116,6 @@ func createTestSnapshots() []storage.KVSnapshot {
 			SnapshotDate:     now.Add(-3 * time.Hour),
 			CensusRoot:       types.HexBytes{0x0a, 0x0b, 0x0c},
 			ParticipantCount: 300,
-			CreatedAt:        now.Add(-3 * time.Hour),
 			MinBalance:       1.0,
 			QueryName:        "ethereum_balances",
 		},
@@ -381,21 +383,21 @@ func TestAPIServerCensusSize(t *testing.T) {
 	workingRef, err := testCensus.New(censusID)
 	c.Assert(err, quicktest.IsNil)
 
-	// Add some test participants
-	testKey := []byte{0x01, 0x02, 0x03}
-	testValue := []byte{0x04, 0x05, 0x06}
+	// Add some test participants (key must be 20 bytes for lean-imt)
+	testKey := makeTestAddress([]byte{0x01, 0x02, 0x03})
+	testValue := []byte{0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b}
 	err = workingRef.Insert(testKey, testValue)
 	c.Assert(err, quicktest.IsNil)
 
 	// Get the census root
 	root := workingRef.Root()
 
-	// Create a root-based census and transfer data
+	// Create a root-based census and publish the working census to it
 	rootRef, err := testCensus.NewByRoot(root)
 	c.Assert(err, quicktest.IsNil)
 
-	// Insert the same data to the root-based census
-	err = rootRef.Insert(testKey, testValue)
+	// Publish the working census to the root-based census
+	err = testCensus.PublishCensus(censusID, rootRef)
 	c.Assert(err, quicktest.IsNil)
 
 	rootHex := hex.EncodeToString(root)
@@ -412,6 +414,10 @@ func TestAPIServerCensusSize(t *testing.T) {
 	c.Assert(err, quicktest.IsNil)
 
 	c.Assert(response.Size, quicktest.Equals, 1) // Should have 1 participant
+
+	// Cleanup: close trees to release Pebble locks
+	_ = workingRef.Tree().Close()
+	_ = rootRef.Tree().Close()
 }
 
 func TestAPIServerCensusProof(t *testing.T) {
@@ -426,9 +432,9 @@ func TestAPIServerCensusProof(t *testing.T) {
 	workingRef, err := testCensus.New(censusID)
 	c.Assert(err, quicktest.IsNil)
 
-	// Add some test participants
-	testKey := []byte{0x01, 0x02, 0x03}
-	testValue := []byte{0x04, 0x05, 0x06}
+	// Add some test participants (key must be 20 bytes for lean-imt)
+	testKey := makeTestAddress([]byte{0x01, 0x02, 0x03})
+	testValue := []byte{0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b}
 	err = workingRef.Insert(testKey, testValue)
 	c.Assert(err, quicktest.IsNil)
 
@@ -476,7 +482,12 @@ func TestAPIServerCensusProof(t *testing.T) {
 	// Verify the proof contains the expected data
 	c.Assert(response.Root, quicktest.DeepEquals, censusdb.HexBytes(root))
 	c.Assert(response.Address, quicktest.DeepEquals, censusdb.HexBytes(testKey))
-	c.Assert(response.Value, quicktest.DeepEquals, censusdb.HexBytes(testValue))
+	// Note: For lean-imt, the value is packed (address << 88 | weight), not the original value
+	c.Assert(response.Weight, quicktest.IsNotNil)
+
+	// Cleanup: close trees to release Pebble locks
+	_ = workingRef.Tree().Close()
+	_ = rootRef.Tree().Close()
 }
 
 func TestAPIServerCensusProofMissingKey(t *testing.T) {

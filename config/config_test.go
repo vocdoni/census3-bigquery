@@ -40,7 +40,7 @@ queries:
       token_address: "0x1234567890123456789012345678901234567890"
       min_balance: 100
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set environment variables for testing
@@ -105,7 +105,7 @@ queries:
     parameters:
       min_balance: 0.5
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set only required environment variables
@@ -153,7 +153,7 @@ queries:
     parameters:
       min_balance: 1.0
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set queries file but not project
@@ -196,7 +196,7 @@ func TestLoadConfigInvalidQueriesFile(t *testing.T) {
 	queriesContent := `
 invalid yaml content [
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set environment variables
@@ -225,7 +225,7 @@ func TestLoadConfigEmptyQueries(t *testing.T) {
 	queriesContent := `
 queries: []
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set environment variables
@@ -259,7 +259,7 @@ queries:
     parameters:
       min_balance: 1.0
 `
-	err := os.WriteFile(queriesFile, []byte(queriesContent), 0644)
+	err := os.WriteFile(queriesFile, []byte(queriesContent), 0o644)
 	c.Assert(err, quicktest.IsNil)
 
 	// Set environment variables

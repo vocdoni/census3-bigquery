@@ -21,6 +21,7 @@ type CensusProof struct {
 	// Merkletree related fields
 	Siblings HexBytes `json:"siblings,omitempty"`
 	Value    HexBytes `json:"value,omitempty"`
+	Index    uint64   `json:"index,omitempty"`
 	// CSP related fields
 	ProcessID HexBytes `json:"processId,omitempty"`
 	PublicKey HexBytes `json:"publicKey,omitempty"`
