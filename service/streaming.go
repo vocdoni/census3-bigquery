@@ -159,6 +159,9 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 		contractAddress = fmt.Sprintf("%v", addr)
 	}
 
+	// Get weight configuration with defaults
+	weightCfg := qr.config.GetWeightConfig()
+
 	alchemyConfig := alchemy.Config{
 		APIKey:          qr.service.config.AlchemyAPIKey,
 		Network:         qr.config.GetNetwork(),
@@ -167,6 +170,13 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 		QueryName:       qr.config.Query,
 		QueryParams:     qr.config.Parameters,
 		PageSize:        100,
+		WeightConfig: alchemy.WeightConfig{
+			Strategy:        weightCfg.Strategy,
+			ConstantWeight:  weightCfg.ConstantWeight,
+			TargetMinWeight: weightCfg.TargetMinWeight,
+			Multiplier:      weightCfg.Multiplier,
+			MaxWeight:       weightCfg.MaxWeight,
+		},
 	}
 
 	// Collect address-weight pairs in memory for metadata processing

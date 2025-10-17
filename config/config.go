@@ -106,11 +106,12 @@ func Load() (*Config, error) {
 	// Define flags
 	pflag.Int("api-port", 8080, "API server port")
 	pflag.String("data-dir", defaultDataDir, "Data directory for storage (default: $HOME/.bigcensus3 or temp dir)")
-	pflag.String("project", "", "GCP project ID for BigQuery (required)")
+	pflag.String("project", "", "GCP project ID for BigQuery (required if using BigQuery queries)")
 	pflag.String("log-level", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	pflag.Int("batch-size", 10000, "Batch size for census creation")
 	pflag.Int("max-census-size", 1000000, "Maximum number of participants per census")
 	pflag.String("queries-file", "./queries.yaml", "Path to queries configuration file")
+	pflag.String("alchemy-api-key", "", "Alchemy API key for Web3 queries (required if using Alchemy queries)")
 
 	pflag.Parse()
 
@@ -122,9 +123,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("batch-size", 10000)
 	viper.SetDefault("max-census-size", 1000000)
 	viper.SetDefault("queries-file", "./queries.yaml")
-
-	// Add Alchemy API key flag
-	pflag.String("alchemy-api-key", "", "Alchemy API key for Web3 queries")
+	viper.SetDefault("alchemy-api-key", "")
 
 	// Bind flags to viper
 	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file", "alchemy-api-key"} {
@@ -157,11 +156,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to load queries: %w", err)
 	}
 
-	// Validate required fields based on query sources
+	// Validate required fields based on query sources (skip disabled queries)
 	hasBigQuery := false
 	hasAlchemy := false
 
 	for _, query := range cfg.Queries {
+		// Skip disabled queries
+		if query.IsDisabled() {
+			continue
+		}
+
 		switch query.GetSource() {
 		case "bigquery":
 			hasBigQuery = true
@@ -170,12 +174,12 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Only require project if we have BigQuery queries
+	// Only require project if we have enabled BigQuery queries
 	if hasBigQuery && cfg.Project == "" {
 		return nil, fmt.Errorf("project is required for BigQuery queries")
 	}
 
-	// Require Alchemy API key if we have Alchemy queries
+	// Require Alchemy API key if we have enabled Alchemy queries
 	if hasAlchemy && cfg.AlchemyAPIKey == "" {
 		return nil, fmt.Errorf("alchemy-api-key is required for Alchemy queries (set via --alchemy-api-key flag or ALCHEMY_API_KEY env var)")
 	}

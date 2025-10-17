@@ -576,16 +576,10 @@ func (c *CensusDB) VerifyProof(proof *CensusProof) bool {
 
 // ProofByRoot generates a Merkle proof for the given leafKey in a census identified by its root.
 func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
-	rk := rootKey(root)
-	c.mu.RLock()
-	censusID, exists := c.rootIndex[rk]
-	c.mu.RUnlock()
-	if !exists {
-		return nil, fmt.Errorf("no census found with the provided root")
-	}
-	ref, err := c.Load(censusID)
+	// Load census by root directly
+	ref, err := c.LoadByRoot(root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("no census found with the provided root: %w", err)
 	}
 
 	// Convert leafKey to Ethereum address.
@@ -618,16 +612,10 @@ func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
 
 // SizeByRoot returns the number of leaves in the Merkle tree with the given root.
 func (c *CensusDB) SizeByRoot(root []byte) (int, error) {
-	rk := rootKey(root)
-	c.mu.RLock()
-	censusID, exists := c.rootIndex[rk]
-	c.mu.RUnlock()
-	if !exists {
-		return 0, fmt.Errorf("no census found with the provided root")
-	}
-	ref, err := c.Load(censusID)
+	// Load census by root directly
+	ref, err := c.LoadByRoot(root)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("no census found with the provided root: %w", err)
 	}
 	return ref.Size(), nil
 }
