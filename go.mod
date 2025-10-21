@@ -1,4 +1,4 @@
-module census3-bigquery
+module github.com/vocdoni/census3-bigquery
 
 go 1.25.1
 
