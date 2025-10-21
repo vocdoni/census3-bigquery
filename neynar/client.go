@@ -1,7 +1,7 @@
 package neynar
 
 import (
-	"census3-bigquery/log"
+	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -123,10 +123,7 @@ func (c *Client) GetUsersByAddresses(ctx context.Context, addresses []string) (m
 		return make(map[string][]User), nil
 	}
 
-	log.Info().
-		Int("total_addresses", len(addresses)).
-		Int("max_per_request", MaxAddressesPerRequest).
-		Msg("Starting Neynar API batch requests")
+	log.Infow("starting Neynar API batch requests", "totalAddresses", len(addresses), "maxPerRequest", MaxAddressesPerRequest)
 
 	allUsers := make(map[string][]User)
 
@@ -141,35 +138,21 @@ func (c *Client) GetUsersByAddresses(ctx context.Context, addresses []string) (m
 		batchNum := (i / MaxAddressesPerRequest) + 1
 		totalBatches := (len(addresses) + MaxAddressesPerRequest - 1) / MaxAddressesPerRequest
 
-		log.Info().
-			Int("batch", batchNum).
-			Int("total_batches", totalBatches).
-			Int("batch_size", len(batch)).
-			Msg("Processing Neynar API batch")
+		log.Infow("processing Neynar API batch", "batch", batchNum, "totalBatches", totalBatches, "batchSize", len(batch))
 
 		batchUsers, err := c.getUsersByAddressesBatch(ctx, batch)
 		if err != nil {
-			log.Error().
-				Err(err).
-				Int("batch", batchNum).
-				Int("batch_size", len(batch)).
-				Msg("Neynar API batch request failed")
+			log.Errorw(err, "neynar API batch request failed")
 			return nil, fmt.Errorf("batch %d failed: %w", batchNum, err)
 		}
 
 		// Merge batch results into final result
 		maps.Copy(allUsers, batchUsers)
 
-		log.Info().
-			Int("batch", batchNum).
-			Int("users_found", len(batchUsers)).
-			Msg("Neynar API batch completed successfully")
+		log.Infow("Neynar API batch completed successfully", "batch", batchNum, "usersFound", len(batchUsers))
 	}
 
-	log.Info().
-		Int("total_addresses_processed", len(addresses)).
-		Int("addresses_with_users", len(allUsers)).
-		Msg("Neynar API batch processing completed")
+	log.Infow("Neynar API batch processing completed", "totalAddressesProcessed", len(addresses), "addressesWithUsers", len(allUsers))
 
 	return allUsers, nil
 }
@@ -204,12 +187,9 @@ func (c *Client) getUsersByAddressesBatch(ctx context.Context, addresses []strin
 	// Set headers
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "census3-bigquery/1.0")
+	req.Header.Set("User-Agent", "github.com/vocdoni/census3-bigquery/1.0")
 
-	log.Debug().
-		Str("url", u.String()).
-		Int("address_count", len(addresses)).
-		Msg("Making Neynar API request")
+	log.Debugw("making Neynar API request", "url", u.String(), "addressCount", len(addresses))
 
 	// Make the request
 	resp, err := c.httpClient.Do(req)
@@ -218,7 +198,7 @@ func (c *Client) getUsersByAddressesBatch(ctx context.Context, addresses []strin
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Warn().Err(closeErr).Msg("Failed to close response body")
+			log.Warnw("failed to close response body", "error", closeErr)
 		}
 	}()
 
@@ -233,10 +213,7 @@ func (c *Client) getUsersByAddressesBatch(ctx context.Context, addresses []strin
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	log.Debug().
-		Int("addresses_requested", len(addresses)).
-		Int("addresses_with_users", len(result)).
-		Msg("Neynar API response parsed successfully")
+	log.Debugw("Neynar API response parsed successfully", "addressesRequested", len(addresses), "addressesWithUsers", len(result))
 
 	return result, nil
 }

@@ -2,8 +2,8 @@ package api
 
 import (
 	"bytes"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"

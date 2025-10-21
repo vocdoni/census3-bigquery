@@ -1,8 +1,8 @@
 package service
 
 import (
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"sync"
 
 	"github.com/vocdoni/davinci-node/types"
@@ -79,10 +79,7 @@ func (ac *AddressCollector) Finalize() error {
 		}
 	}
 
-	log.Debug().
-		Str("census_root", ac.censusRoot.String()).
-		Int("total_pages", ac.currentPage).
-		Msg("Address collection completed")
+	log.Debugw("address collection completed", "censusRoot", ac.censusRoot.String(), "totalPages", ac.currentPage)
 
 	return nil
 }
@@ -98,11 +95,7 @@ func (ac *AddressCollector) storePage() error {
 		return err
 	}
 
-	log.Debug().
-		Str("census_root", ac.censusRoot.String()).
-		Int("page_number", ac.currentPage).
-		Int("entries_in_page", len(ac.entries)).
-		Msg("Stored address page")
+	log.Debugw("stored address page", "censusRoot", ac.censusRoot.String(), "pageNumber", ac.currentPage, "entriesInPage", len(ac.entries))
 
 	// Reset for next page
 	ac.entries = ac.entries[:0] // Clear slice but keep capacity

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rs/zerolog/log"
+	"github.com/vocdoni/davinci-node/log"
 )
 
 // Error is used by handler functions to wrap errors, assigning a unique error code
@@ -42,11 +42,11 @@ func (e Error) Error() string {
 func (e Error) Write(w http.ResponseWriter) {
 	msg, err := json.Marshal(e)
 	if err != nil {
-		log.Warn().Err(err).Msg("marshal failed")
+		log.Warnw("marshal failed", "error", err)
 		http.Error(w, "marshal failed", http.StatusInternalServerError)
 		return
 	}
-	log.Debug().Err(e.Err).Int("code", e.Code).Int("httpStatus", e.HTTPstatus).Msg("API error response")
+	log.Debugw("API error response", "error", e.Err, "code", e.Code, "httpStatus", e.HTTPstatus)
 	// set the content type to JSON
 	w.Header().Set("Content-Type", "application/json")
 	http.Error(w, string(msg), e.HTTPstatus)

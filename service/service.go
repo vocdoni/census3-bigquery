@@ -3,13 +3,13 @@
 package service
 
 import (
-	"census3-bigquery/alchemy"
-	"census3-bigquery/api"
-	"census3-bigquery/bigquery"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/config"
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/alchemy"
+	"github.com/vocdoni/census3-bigquery/api"
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"context"
 	"fmt"
 	"os"
@@ -56,7 +56,7 @@ type Service struct {
 
 // New creates and initializes a new Service instance with all required components.
 func New(cfg *config.Config) (*Service, error) {
-	log.Info().Msg("Initializing service")
+	log.Infow("initializing service")
 	startTime := time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,7 +81,7 @@ func New(cfg *config.Config) (*Service, error) {
 
 	// Initialize API server
 	apiServer := api.NewServer(kvStorage, censusDB, cfg.APIPort, cfg.MaxCensusSize)
-	log.Info().Int("port", cfg.APIPort).Msg("API server initialized")
+	log.Infow("API server initialized", "port", cfg.APIPort)
 
 	service := &Service{
 		config:         cfg,
@@ -101,17 +101,14 @@ func New(cfg *config.Config) (*Service, error) {
 		return nil, err
 	}
 
-	log.Info().
-		Dur("duration", time.Since(startTime)).
-		Int("runners", len(service.queryRunners)).
-		Msg("Service initialized")
+	log.Infow("service initialized", "duration", time.Since(startTime), "runners", len(service.queryRunners))
 
 	return service, nil
 }
 
 // Start begins service operation, starting all query runners and the API server.
 func (s *Service) Start() error {
-	log.Info().Msg("Starting service")
+	log.Infow("starting service")
 
 	s.logConfiguration()
 
@@ -120,7 +117,7 @@ func (s *Service) Start() error {
 	go func() {
 		defer s.wg.Done()
 		if err := s.apiServer.Start(); err != nil {
-			log.Error().Err(err).Msg("API server error")
+			log.Errorw(err, "API server error")
 		}
 	}()
 
@@ -129,7 +126,7 @@ func (s *Service) Start() error {
 	go func() {
 		defer s.wg.Done()
 		if err := s.synchronizeQueries(); err != nil {
-			log.Warn().Err(err).Msg("Query synchronization failed")
+			log.Warnw("query synchronization failed", "error", err)
 		}
 	}()
 
@@ -138,15 +135,12 @@ func (s *Service) Start() error {
 		s.wg.Add(1)
 		go func(idx int, r *QueryRunner) {
 			defer s.wg.Done()
-			log.Info().
-				Int("index", idx+1).
-				Str("query", r.config.Name).
-				Msg("Starting query runner")
+			log.Infow("starting query runner", "index", idx+1, "query", r.config.Name)
 			r.run()
 		}(i, runner)
 	}
 
-	log.Info().Msg("Service started")
+	log.Infow("service started")
 
 	// Wait for shutdown signal
 	s.waitForShutdown()
@@ -156,14 +150,14 @@ func (s *Service) Start() error {
 
 // Stop gracefully shuts down the service, stopping all query runners and closing connections.
 func (s *Service) Stop() {
-	log.Info().Msg("Stopping service")
+	log.Infow("stopping service")
 
 	s.cancel()
 	s.wg.Wait()
 
 	closeClients(s.bigqueryClient, s.alchemyClient)
 
-	log.Info().Msg("Service stopped")
+	log.Infow("service stopped")
 }
 
 // initializeDataSourceClients creates BigQuery and Alchemy clients based on query requirements.
@@ -178,7 +172,7 @@ func initializeDataSourceClients(ctx context.Context, cfg *config.Config) (BigQu
 			return nil, nil, fmt.Errorf("bigquery client: %w", err)
 		}
 		bqClient = client
-		log.Info().Msg("BigQuery client initialized")
+		log.Infow("BigQuery client initialized")
 	}
 
 	// Check if Alchemy is needed
@@ -191,7 +185,7 @@ func initializeDataSourceClients(ctx context.Context, cfg *config.Config) (BigQu
 			return nil, nil, fmt.Errorf("alchemy client: %w", err)
 		}
 		alchemyClient = client
-		log.Info().Msg("Alchemy client initialized")
+		log.Infow("Alchemy client initialized")
 	}
 
 	return bqClient, alchemyClient, nil
@@ -209,15 +203,15 @@ func initializeStorage(cfg *config.Config) (db.Database, *censusdb.CensusDB, *st
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("initialize database: %w", err)
 	}
-	log.Info().Str("path", cfg.DataDir).Msg("Database initialized")
+	log.Infow("database initialized", "path", cfg.DataDir)
 
 	// Initialize census DB
 	censusDB := censusdb.NewCensusDB(database)
-	log.Info().Msg("Census DB initialized")
+	log.Infow("census DB initialized")
 
 	// Initialize KV storage
 	kvStorage := storage.NewKVSnapshotStorage(database)
-	log.Info().Msg("Snapshot storage initialized")
+	log.Infow("snapshot storage initialized")
 
 	return database, censusDB, kvStorage, nil
 }
@@ -226,9 +220,7 @@ func initializeStorage(cfg *config.Config) (db.Database, *censusdb.CensusDB, *st
 func (s *Service) initializeQueryRunners() error {
 	for i, queryConfig := range s.config.Queries {
 		if queryConfig.IsDisabled() {
-			log.Info().
-				Str("query", queryConfig.Name).
-				Msg("Query disabled, skipping runner")
+			log.Infow("query disabled, skipping runner", "query", queryConfig.Name)
 			continue
 		}
 
@@ -240,7 +232,7 @@ func (s *Service) initializeQueryRunners() error {
 		s.queryRunners = append(s.queryRunners, runner)
 	}
 
-	log.Info().Int("count", len(s.queryRunners)).Msg("Query runners initialized")
+	log.Infow("query runners initialized", "count", len(s.queryRunners))
 	return nil
 }
 
@@ -276,21 +268,10 @@ func (s *Service) createQueryRunner(queryConfig *config.QueryConfig) (*QueryRunn
 
 // logConfiguration logs the service configuration for debugging.
 func (s *Service) logConfiguration() {
-	log.Info().
-		Int("api_port", s.config.APIPort).
-		Str("data_dir", s.config.DataDir).
-		Str("project", s.config.Project).
-		Int("batch_size", s.config.BatchSize).
-		Int("queries", len(s.config.Queries)).
-		Msg("Service configuration")
+	log.Infow("service configuration", "apiPort", s.config.APIPort, "dataDir", s.config.DataDir, "project", s.config.Project, "batchSize", s.config.BatchSize, "queries", len(s.config.Queries))
 
 	for i, q := range s.config.Queries {
-		log.Info().
-			Int("index", i+1).
-			Str("name", q.Name).
-			Str("period", q.Period.String()).
-			Float64("min_balance", q.GetMinBalance()).
-			Msg("Query configuration")
+		log.Infow("query configuration", "index", i+1, "name", q.Name, "period", q.Period.String(), "minBalance", q.GetMinBalance())
 	}
 }
 
@@ -301,9 +282,9 @@ func (s *Service) waitForShutdown() {
 
 	select {
 	case sig := <-sigChan:
-		log.Info().Str("signal", sig.String()).Msg("Shutdown signal received")
+		log.Infow("shutdown signal received", "signal", sig.String())
 	case <-s.ctx.Done():
-		log.Info().Msg("Context cancelled")
+		log.Infow("context cancelled")
 	}
 
 	signal.Stop(sigChan)
@@ -326,12 +307,12 @@ func hasQueriesForSource(queries []config.QueryConfig, source string) bool {
 func closeClients(bq BigQueryClient, alchemy AlchemyClient) {
 	if bq != nil {
 		if err := bq.Close(); err != nil {
-			log.Warn().Err(err).Msg("Failed to close BigQuery client")
+			log.Warnw("failed to close BigQuery client", "error", err)
 		}
 	}
 	if alchemy != nil {
 		if err := alchemy.Close(); err != nil {
-			log.Warn().Err(err).Msg("Failed to close Alchemy client")
+			log.Warnw("failed to close Alchemy client", "error", err)
 		}
 	}
 }
@@ -341,14 +322,11 @@ func purgeWorkingCensuses(censusDB *censusdb.CensusDB) {
 	start := time.Now()
 	purged, err := censusDB.PurgeWorkingCensuses(time.Nanosecond)
 	if err != nil {
-		log.Warn().Err(err).Msg("Failed to purge working censuses")
+		log.Warnw("failed to purge working censuses", "error", err)
 		return
 	}
 
 	if purged > 0 {
-		log.Info().
-			Int("count", purged).
-			Dur("duration", time.Since(start)).
-			Msg("Purged working censuses")
+		log.Infow("purged working censuses", "count", purged, "duration", time.Since(start))
 	}
 }

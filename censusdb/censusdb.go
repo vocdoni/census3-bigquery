@@ -2,7 +2,7 @@ package censusdb
 
 import (
 	"bytes"
-	"census3-bigquery/log"
+	"github.com/vocdoni/davinci-node/log"
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
@@ -89,10 +89,7 @@ func NewCensusDB(db db.Database) *CensusDB {
 	go func() {
 		for req := range c.updateRootChan {
 			if err := c.updateRoot(req.censusID, req.newRoot); err != nil {
-				log.Warn().
-					Str("id", hex.EncodeToString(req.censusID[:])).
-					Err(err).
-					Msg("error updating census root")
+				log.Warnw("error updating census root", "id", hex.EncodeToString(req.censusID[:]), "error", err)
 			}
 			if req.done != nil {
 				close(req.done)
@@ -395,11 +392,7 @@ func (c *CensusDB) Del(censusID uuid.UUID) error {
 	go func(id uuid.UUID) {
 		path := censusPrefix(id)
 		if err := os.RemoveAll(path); err != nil {
-			log.Warn().
-				Str("id", hex.EncodeToString(id[:])).
-				Str("path", path).
-				Err(err).
-				Msg("Error deleting census directory")
+			log.Warnw("error deleting census directory", "id", hex.EncodeToString(id[:]), "path", path, "error", err)
 		}
 	}(censusID)
 
@@ -437,11 +430,7 @@ func (c *CensusDB) CleanupWorkingCensus(censusID uuid.UUID) error {
 	err := os.RemoveAll(path)
 	duration := time.Since(startTime)
 
-	log.Info().
-		Str("census_id", hex.EncodeToString(censusID[:])).
-		Str("path", path).
-		Str("duration", duration.String()).
-		Msg("Working census cleanup completed")
+	log.Infow("working census cleanup completed", "censusId", hex.EncodeToString(censusID[:]), "path", path, "duration", duration.String())
 
 	return err
 }
@@ -537,11 +526,7 @@ func (c *CensusDB) PublishCensus(originCensusID uuid.UUID, destinationRef *Censu
 	c.rootIndex[rk] = destinationRef.ID
 	c.mu.Unlock()
 
-	log.Info().
-		Str("origin_census_id", hex.EncodeToString(originCensusID[:])).
-		Str("destination_census_id", hex.EncodeToString(destinationRef.ID[:])).
-		Str("root", hex.EncodeToString(root.Bytes())).
-		Msg("Successfully published census by moving directory")
+	log.Infow("successfully published census by moving directory", "originCensusId", hex.EncodeToString(originCensusID[:]), "destinationCensusId", hex.EncodeToString(destinationRef.ID[:]), "root", hex.EncodeToString(root.Bytes()))
 
 	return nil
 }
@@ -684,19 +669,12 @@ func (c *CensusDB) PurgeWorkingCensuses(maxAge time.Duration) (int, error) {
 		go func(id uuid.UUID) {
 			path := censusPrefix(id)
 			if err := os.RemoveAll(path); err != nil {
-				log.Warn().
-					Str("id", hex.EncodeToString(id[:])).
-					Str("path", path).
-					Err(err).
-					Msg("Error deleting purged census directory")
+				log.Warnw("error deleting purged census directory", "id", hex.EncodeToString(id[:]), "path", path, "error", err)
 			}
 		}(censusID)
 	}
 
-	log.Info().
-		Int("purged_count", len(keysToDelete)).
-		Str("max_age", maxAge.String()).
-		Msg("Purged old working censuses")
+	log.Infow("purged old working censuses", "purgedCount", len(keysToDelete), "maxAge", maxAge.String())
 
 	return len(keysToDelete), nil
 }

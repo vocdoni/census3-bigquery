@@ -1,7 +1,7 @@
 package alchemy
 
 import (
-	"census3-bigquery/log"
+	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -93,12 +93,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		return
 	}
 
-	log.Info().
-		Str("query_name", cfg.QueryName).
-		Str("network", cfg.Network).
-		Str("contract_address", cfg.ContractAddress).
-		Float64("min_balance", cfg.MinBalance).
-		Msg("Starting Alchemy streaming query")
+	log.Infow("starting Alchemy streaming query", "queryName", cfg.QueryName, "network", cfg.Network, "contractAddress", cfg.ContractAddress, "minBalance", cfg.MinBalance)
 
 	// Execute the appropriate query based on type
 	// Each streaming function is responsible for closing the channels when done
@@ -136,9 +131,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 		// Check context cancellation
 		select {
 		case <-ctx.Done():
-			log.Info().
-				Int("total_processed", totalProcessed).
-				Msg("Alchemy streaming cancelled by context")
+			log.Infow("Alchemy streaming cancelled by context", "totalProcessed", totalProcessed)
 			return
 		default:
 		}
@@ -178,11 +171,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 				if parsed, err := strconv.ParseInt(tokenBalance.Balance, 10, 64); err == nil {
 					balance += parsed
 				} else {
-					log.Debug().
-						Err(err).
-						Str("address", owner.OwnerAddress).
-						Str("balance", tokenBalance.Balance).
-						Msg("Failed to parse token balance")
+					log.Debugw("failed to parse token balance", "error", err, "address", owner.OwnerAddress, "balance", tokenBalance.Balance)
 				}
 			}
 
@@ -193,9 +182,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 
 			// Validate address
 			if !common.IsHexAddress(owner.OwnerAddress) {
-				log.Warn().
-					Str("address", owner.OwnerAddress).
-					Msg("Skipping invalid address format")
+				log.Warnw("skipping invalid address format", "address", owner.OwnerAddress)
 				continue
 			}
 
@@ -204,10 +191,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 			// Calculate weight based on configuration
 			weight, err := calculateWeight(balance, cfg)
 			if err != nil {
-				log.Warn().
-					Err(err).
-					Str("address", owner.OwnerAddress).
-					Msg("Failed to calculate weight, skipping")
+				log.Warnw("failed to calculate weight, skipping", "error", err, "address", owner.OwnerAddress)
 				continue
 			}
 
@@ -229,12 +213,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 		if currentTime.Sub(lastLogTime) >= 10*time.Second {
 			elapsed := currentTime.Sub(startTime)
 			rate := float64(totalProcessed) / elapsed.Seconds()
-			log.Info().
-				Int("processed", totalProcessed).
-				Str("elapsed", elapsed.String()).
-				Float64("addr_per_sec", rate).
-				Str("network", cfg.Network).
-				Msg("Alchemy streaming progress")
+			log.Infow("Alchemy streaming progress", "processed", totalProcessed, "elapsed", elapsed.String(), "addrPerSec", rate, "network", cfg.Network)
 			lastLogTime = currentTime
 		}
 
@@ -247,12 +226,7 @@ func (c *Client) streamNFTHolders(ctx context.Context, network NetworkInfo, cfg 
 
 	elapsed := time.Since(startTime)
 	rate := float64(totalProcessed) / elapsed.Seconds()
-	log.Info().
-		Int("total_processed", totalProcessed).
-		Str("elapsed", elapsed.String()).
-		Float64("addr_per_sec", rate).
-		Str("network", cfg.Network).
-		Msg("Alchemy streaming completed")
+	log.Infow("Alchemy streaming completed", "totalProcessed", totalProcessed, "elapsed", elapsed.String(), "addrPerSec", rate, "network", cfg.Network)
 }
 
 // streamERC20Holders streams ERC20 token holders (placeholder for future implementation)
@@ -302,9 +276,7 @@ func (c *Client) streamMultiNFTHolders(ctx context.Context, network NetworkInfo,
 	for _, contractAddr := range contractAddresses {
 		contractAddr = strings.TrimSpace(contractAddr)
 		if !common.IsHexAddress(contractAddr) {
-			log.Warn().
-				Str("contract", contractAddr).
-				Msg("Skipping invalid contract address")
+			log.Warnw("skipping invalid contract address", "contract", contractAddr)
 			continue
 		}
 
@@ -366,14 +338,10 @@ func (c *Client) streamMultiNFTHolders(ctx context.Context, network NetworkInfo,
 	}
 
 	// Wait for all contracts to be processed
-	log.Debug().
-		Int("contracts", len(contractAddresses)).
-		Msg("Waiting for all contracts to be processed")
+	log.Debugw("waiting for all contracts to be processed", "contracts", len(contractAddresses))
 	wg.Wait()
 
-	log.Debug().
-		Int("unique_holders_collected", len(uniqueHolders)).
-		Msg("All contracts processed, checking for errors")
+	log.Debugw("all contracts processed, checking for errors", "uniqueHoldersCollected", len(uniqueHolders))
 
 	close(errChan)
 
@@ -387,13 +355,11 @@ func (c *Client) streamMultiNFTHolders(ctx context.Context, network NetworkInfo,
 	}
 
 	if hasErrors {
-		log.Error().Msg("Errors encountered during multi-NFT processing, exiting")
+		log.Error("errors encountered during multi-NFT processing, exiting")
 		return
 	}
 
-	log.Debug().
-		Int("unique_holders", len(uniqueHolders)).
-		Msg("No errors found, sending unique holders to channel")
+	log.Debugw("no errors found, sending unique holders to channel", "uniqueHolders", len(uniqueHolders))
 
 	// Send unique holders to the channel
 	sentCount := 0
@@ -406,19 +372,12 @@ func (c *Client) streamMultiNFTHolders(ctx context.Context, network NetworkInfo,
 		case participantCh <- participant:
 			sentCount++
 		case <-ctx.Done():
-			log.Warn().
-				Int("sent", sentCount).
-				Int("total", len(uniqueHolders)).
-				Msg("Context cancelled while sending participants")
+			log.Warnw("context cancelled while sending participants", "sent", sentCount, "total", len(uniqueHolders))
 			return
 		}
 	}
 
-	log.Info().
-		Int("unique_holders", len(uniqueHolders)).
-		Int("sent_to_channel", sentCount).
-		Int("contracts_processed", len(contractAddresses)).
-		Msg("Multi-NFT holder query completed - all participants sent")
+	log.Infow("multi-NFT holder query completed - all participants sent", "uniqueHolders", len(uniqueHolders), "sentToChannel", sentCount, "contractsProcessed", len(contractAddresses))
 }
 
 // makeRequest makes an HTTP request to Alchemy API
@@ -439,7 +398,7 @@ func (c *Client) makeRequest(ctx context.Context, method, url string, body io.Re
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Warn().Err(closeErr).Msg("Failed to close response body")
+			log.Warnw("failed to close response body", "error", closeErr)
 		}
 	}()
 

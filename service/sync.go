@@ -1,9 +1,9 @@
 package service
 
 import (
-	"census3-bigquery/censusdb"
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"fmt"
 	"math/big"
 	"time"
@@ -18,7 +18,7 @@ func (qr *QueryRunner) performSync() error {
 	startTime := time.Now()
 	queryID := qr.config.Name
 
-	log.Info().Str("query", queryID).Msg("Starting sync")
+	log.Infow("starting sync", "query", queryID)
 
 	// Create working census
 	censusID := uuid.New()
@@ -34,7 +34,7 @@ func (qr *QueryRunner) performSync() error {
 	}
 
 	if participantCount == 0 {
-		log.Warn().Str("query", queryID).Msg("No participants found, skipping snapshot")
+		log.Warnw("no participants found, skipping snapshot", "query", queryID)
 		return qr.service.censusDB.CleanupWorkingCensus(censusID)
 	}
 
@@ -44,11 +44,7 @@ func (qr *QueryRunner) performSync() error {
 		return fmt.Errorf("census has no root")
 	}
 
-	log.Info().
-		Str("query", queryID).
-		Str("root", fmt.Sprintf("0x%x", censusRoot)).
-		Int("participants", participantCount).
-		Msg("Census created")
+	log.Infow("census created", "query", queryID, "root", fmt.Sprintf("0x%x", censusRoot), "participants", participantCount)
 
 	// Create root-based census
 	rootRef, err := qr.service.censusDB.NewByRoot(censusRoot)
@@ -96,19 +92,14 @@ func (qr *QueryRunner) performSync() error {
 	if qr.config.SnapshotsToKeep != nil && *qr.config.SnapshotsToKeep > 0 {
 		deleted, _, err := qr.service.kvStorage.DeleteOldSnapshotsByQuery(queryID, *qr.config.SnapshotsToKeep)
 		if err != nil {
-			log.Warn().Err(err).Str("query", queryID).Msg("Failed to cleanup old snapshots")
+			log.Warnw("failed to cleanup old snapshots", "error", err, "query", queryID)
 		} else if deleted > 0 {
-			log.Info().Str("query", queryID).Int("deleted", deleted).Msg("Cleaned up old snapshots")
+			log.Infow("cleaned up old snapshots", "query", queryID, "deleted", deleted)
 		}
 	}
 
 	duration := time.Since(startTime)
-	log.Info().
-		Str("query", queryID).
-		Str("root", fmt.Sprintf("0x%x", censusRoot)).
-		Int("participants", participantCount).
-		Dur("duration", duration).
-		Msg("Sync completed")
+	log.Infow("sync completed", "query", queryID, "root", fmt.Sprintf("0x%x", censusRoot), "participants", participantCount, "duration", duration)
 
 	return nil
 }
@@ -129,30 +120,18 @@ func (qr *QueryRunner) streamAndCreateCensus(workingRef *censusdb.CensusRef) (in
 
 // processFarcasterMetadata processes Farcaster metadata for the census.
 func (qr *QueryRunner) processFarcasterMetadata(censusRoot types.HexBytes) {
-	log.Info().
-		Str("query", qr.config.Name).
-		Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
-		Msg("Processing Farcaster metadata")
+	log.Infow("processing Farcaster metadata", "query", qr.config.Name, "censusRoot", fmt.Sprintf("0x%x", censusRoot))
 
 	// Extract addresses and weights
 	addresses, weights, err := qr.extractOriginalAddressesAndWeights(censusRoot)
 	if err != nil {
-		log.Warn().
-			Err(err).
-			Str("query", qr.config.Name).
-			Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
-			Msg("Failed to extract addresses for Farcaster metadata")
+		log.Warnw("failed to extract addresses for Farcaster metadata", "error", err, "query", qr.config.Name, "censusRoot", fmt.Sprintf("0x%x", censusRoot))
 		return
 	}
 
 	// Process metadata (implementation depends on metadata package)
 	// This is a placeholder - actual implementation would use metadata.FarcasterProcessor
-	log.Info().
-		Str("query", qr.config.Name).
-		Str("census_root", fmt.Sprintf("0x%x", censusRoot)).
-		Int("addresses", len(addresses)).
-		Int("weights", len(weights)).
-		Msg("Farcaster metadata processed")
+	log.Infow("Farcaster metadata processed", "query", qr.config.Name, "censusRoot", fmt.Sprintf("0x%x", censusRoot), "addresses", len(addresses), "weights", len(weights))
 }
 
 // extractOriginalAddressesAndWeights retrieves the original addresses and weights
@@ -179,7 +158,7 @@ func (qr *QueryRunner) extractOriginalAddressesAndWeights(censusRoot types.HexBy
 
 // synchronizeQueries ensures query configurations match stored snapshots.
 func (s *Service) synchronizeQueries() error {
-	log.Info().Msg("Synchronizing query configurations")
+	log.Infow("synchronizing query configurations")
 
 	for _, queryConfig := range s.config.Queries {
 		if queryConfig.IsDisabled() {
@@ -189,35 +168,22 @@ func (s *Service) synchronizeQueries() error {
 		// Check if query has any snapshots
 		snapshots, err := s.kvStorage.SnapshotsByQuery(queryConfig.Name)
 		if err != nil {
-			log.Warn().
-				Err(err).
-				Str("query", queryConfig.Name).
-				Msg("Failed to get snapshots for query")
+			log.Warnw("failed to get snapshots for query", "error", err, "query", queryConfig.Name)
 			continue
 		}
 
 		if len(snapshots) == 0 {
-			log.Info().
-				Str("query", queryConfig.Name).
-				Msg("No snapshots found for query")
+			log.Infow("no snapshots found for query", "query", queryConfig.Name)
 			continue
 		}
 
 		// Verify latest snapshot configuration matches
 		latest := snapshots[0]
 		if latest.MinBalance != queryConfig.GetMinBalance() {
-			log.Warn().
-				Str("query", queryConfig.Name).
-				Float64("stored", latest.MinBalance).
-				Float64("config", queryConfig.GetMinBalance()).
-				Msg("MinBalance mismatch between stored snapshot and configuration")
+			log.Warnw("minBalance mismatch between stored snapshot and configuration", "query", queryConfig.Name, "stored", latest.MinBalance, "config", queryConfig.GetMinBalance())
 		}
 
-		log.Debug().
-			Str("query", queryConfig.Name).
-			Int("snapshots", len(snapshots)).
-			Time("latest", latest.SnapshotDate).
-			Msg("Query synchronized")
+		log.Debugw("query synchronized", "query", queryConfig.Name, "snapshots", len(snapshots), "latest", latest.SnapshotDate)
 	}
 
 	return nil

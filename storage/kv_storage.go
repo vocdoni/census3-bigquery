@@ -2,7 +2,7 @@ package storage
 
 import (
 	"bytes"
-	"census3-bigquery/log"
+	"github.com/vocdoni/davinci-node/log"
 	"encoding/gob"
 	"fmt"
 	"sort"
@@ -185,23 +185,19 @@ func (s *KVSnapshotStorage) forceUpdateMetadata(wtx db.WriteTx, snapshot KVSnaps
 
 // Snapshots returns all snapshots ordered by most recent first
 func (s *KVSnapshotStorage) Snapshots() ([]KVSnapshot, error) {
-	startTime := time.Now()
 	var snapshots []KVSnapshot
 
 	err := s.db.Iterate([]byte(snapshotPrefix), func(key, value []byte) bool {
 		var snapshot KVSnapshot
 		if err := gob.NewDecoder(bytes.NewReader(value)).Decode(&snapshot); err != nil {
-			log.Warn().Err(err).Msg("Failed to decode snapshot, skipping")
+			log.Warnw("failed to decode snapshot, skipping", "error", err)
 			return true // Continue iteration, skip invalid entries
 		}
 		snapshots = append(snapshots, snapshot)
 		return true
 	})
 	if err != nil {
-		log.Error().
-			Err(err).
-			Str("duration", time.Since(startTime).String()).
-			Msg("Database iteration failed")
+		log.Errorw(err, "database iteration failed")
 		return nil, fmt.Errorf("failed to iterate snapshots: %w", err)
 	}
 
@@ -477,11 +473,7 @@ func (s *KVSnapshotStorage) DeleteOldSnapshotsByQuery(queryName string, keepCoun
 	}
 	wtx = nil // Prevent discard from being called
 
-	log.Info().
-		Str("query", queryName).
-		Int("deleted_count", len(keysToDelete)).
-		Int("keep_count", keepCount).
-		Msg("Deleted old snapshots for query")
+	log.Infow("deleted old snapshots for query", "query", queryName, "deletedCount", len(keysToDelete), "keepCount", keepCount)
 
 	return len(keysToDelete), censusRootsToDelete, nil
 }
@@ -619,11 +611,7 @@ func (s *KVSnapshotStorage) GetAllAddressesAndWeights(censusRoot types.HexBytes)
 		pageNumber++
 	}
 
-	log.Debug().
-		Str("census_root", censusRoot.String()).
-		Int("total_addresses", len(allAddresses)).
-		Int("pages_loaded", pageNumber).
-		Msg("Loaded all addresses and weights from storage")
+	log.Debugw("loaded all addresses and weights from storage", "censusRoot", censusRoot.String(), "totalAddresses", len(allAddresses), "pagesLoaded", pageNumber)
 
 	return allAddresses, weights, nil
 }
@@ -684,10 +672,7 @@ func (s *KVSnapshotStorage) DeleteAddressList(censusRoot types.HexBytes) error {
 		return fmt.Errorf("failed to commit address list deletion: %w", err)
 	}
 
-	log.Debug().
-		Str("census_root", censusRoot.String()).
-		Int("pages_deleted", pageCount).
-		Msg("Deleted address list")
+	log.Debugw("deleted address list", "censusRoot", censusRoot.String(), "pagesDeleted", pageCount)
 
 	return nil
 }

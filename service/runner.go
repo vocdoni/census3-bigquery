@@ -1,8 +1,8 @@
 package service
 
 import (
-	"census3-bigquery/config"
-	"census3-bigquery/log"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"time"
 )
@@ -21,16 +21,13 @@ func (qr *QueryRunner) run() {
 
 	// Run initial sync if needed
 	if qr.shouldRunInitialSync() {
-		log.Info().
-			Str("query", queryName).
-			Bool("sync_on_start", qr.config.GetSyncOnStart()).
-			Msg("Running initial sync")
+		log.Infow("running initial sync", "query", queryName, "syncOnStart", qr.config.GetSyncOnStart())
 
 		if err := qr.performSync(); err != nil {
-			log.Error().Err(err).Str("query", queryName).Msg("Initial sync failed")
+			log.Errorw(err, "initial sync failed")
 		}
 	} else {
-		log.Info().Str("query", queryName).Msg("Skipping initial sync")
+		log.Infow("skipping initial sync", "query", queryName)
 	}
 
 	// Start periodic sync
@@ -40,13 +37,13 @@ func (qr *QueryRunner) run() {
 	for {
 		select {
 		case <-qr.ctx.Done():
-			log.Info().Str("query", queryName).Msg("Query runner stopped")
+			log.Infow("query runner stopped", "query", queryName)
 			return
 
 		case <-ticker.C:
-			log.Info().Str("query", queryName).Msg("Running periodic sync")
+			log.Infow("running periodic sync", "query", queryName)
 			if err := qr.performSync(); err != nil {
-				log.Error().Err(err).Str("query", queryName).Msg("Periodic sync failed")
+				log.Errorw(err, "periodic sync failed")
 			}
 		}
 	}
@@ -63,7 +60,7 @@ func (qr *QueryRunner) shouldRunInitialSync() bool {
 	// Check time since last snapshot
 	latest, err := qr.service.kvStorage.GetLatestSnapshotByQuery(qr.config.Name)
 	if err != nil {
-		log.Warn().Err(err).Str("query", qr.config.Name).Msg("Cannot determine last snapshot")
+		log.Warnw("cannot determine last snapshot", "error", err, "query", qr.config.Name)
 		return true
 	}
 
@@ -74,13 +71,7 @@ func (qr *QueryRunner) shouldRunInitialSync() bool {
 	timeSince := time.Since(latest.SnapshotDate)
 	shouldRun := timeSince >= qr.config.Period
 
-	log.Debug().
-		Str("query", qr.config.Name).
-		Time("last_snapshot", latest.SnapshotDate).
-		Dur("time_since", timeSince).
-		Dur("period", qr.config.Period).
-		Bool("should_run", shouldRun).
-		Msg("Initial sync check")
+	log.Debugw("initial sync check", "query", qr.config.Name, "lastSnapshot", latest.SnapshotDate, "timeSince", timeSince, "period", qr.config.Period, "shouldRun", shouldRun)
 
 	return shouldRun
 }

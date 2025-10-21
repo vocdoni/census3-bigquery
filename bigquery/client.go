@@ -1,7 +1,7 @@
 package bigquery
 
 import (
-	"census3-bigquery/log"
+	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"fmt"
 	"math/big"
@@ -148,7 +148,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 
 	// Estimate query cost if requested
 	if cfg.EstimateFirst {
-		log.Info().Str("query_name", cfg.QueryName).Msg("Estimating streaming query cost before execution")
+		log.Infow("estimating streaming query cost before execution", "queryName", cfg.QueryName)
 
 		estimate, err := c.EstimateQuerySize(ctx, sql, bqParams, cfg.BigQueryPricing)
 		if err != nil {
@@ -157,13 +157,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		}
 
 		// Log estimation results
-		log.Info().
-			Int64("bytes_processed", estimate.BytesProcessed).
-			Str("bytes_formatted", formatBytes(estimate.BytesProcessed)).
-			Float64("estimated_cost_usd", estimate.EstimatedCostUSD).
-			Bool("is_valid", estimate.IsValid).
-			Str("query_name", cfg.QueryName).
-			Msg("Streaming query cost estimation completed")
+		log.Infow("streaming query cost estimation completed", "bytesProcessed", estimate.BytesProcessed, "bytesFormatted", formatBytes(estimate.BytesProcessed), "estimatedCostUsd", estimate.EstimatedCostUSD, "isValid", estimate.IsValid, "queryName", cfg.QueryName)
 
 		// Check if query is valid
 		if !estimate.IsValid {
@@ -178,7 +172,7 @@ func (c *Client) StreamBalances(ctx context.Context, cfg Config, participantCh c
 		}
 	}
 
-	log.Info().Str("query_name", cfg.QueryName).Interface("parameters", queryParams).Msg("Executing streaming query")
+	log.Infow("executing streaming query", "queryName", cfg.QueryName, "parameters", queryParams)
 
 	// Execute query with enhanced cost controls
 	q := c.client.Query(sql)
@@ -274,7 +268,7 @@ func (c *Client) processBalanceRows(ctx context.Context, balanceRowCh <-chan bal
 
 			// Convert to participant and send to channel
 			if !common.IsHexAddress(r.Address) {
-				log.Warn().Str("address", r.Address).Msg("Skipping invalid address format")
+				log.Warnw("skipping invalid address format", "address", r.Address)
 				continue
 			}
 
@@ -283,7 +277,7 @@ func (c *Client) processBalanceRows(ctx context.Context, balanceRowCh <-chan bal
 			// Calculate weight based on configuration
 			weight, err := calculateWeight(r.Balance, cfg)
 			if err != nil {
-				log.Warn().Err(err).Str("address", r.Address).Msg("Failed to calculate weight, skipping")
+				log.Warnw("failed to calculate weight, skipping", "error", err, "address", r.Address)
 				continue
 			}
 
@@ -432,11 +426,7 @@ func (c *Client) checkCostThresholds(estimate *QueryEstimate, thresholds CostThr
 
 	// Log warning if above warning threshold
 	if thresholds.WarnThresholdBytes != nil && estimate.BytesProcessed > *thresholds.WarnThresholdBytes {
-		log.Warn().
-			Str("bytes_processed", formatBytes(estimate.BytesProcessed)).
-			Str("bytes_formatted", formatBytes(estimate.BytesProcessed)).
-			Float64("estimated_cost_usd", estimate.EstimatedCostUSD).
-			Msg("Query will process large amount of data")
+		log.Warnw("query will process large amount of data", "bytesProcessed", formatBytes(estimate.BytesProcessed), "bytesFormatted", formatBytes(estimate.BytesProcessed), "estimatedCostUsd", estimate.EstimatedCostUSD)
 	}
 
 	return nil

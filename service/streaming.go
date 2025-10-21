@@ -1,11 +1,11 @@
 package service
 
 import (
-	"census3-bigquery/alchemy"
-	"census3-bigquery/bigquery"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/alchemy"
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"fmt"
 	"time"
 
@@ -67,18 +67,13 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				// Store collected address-weight entries
 				if storeAddresses && len(collectedEntries) > 0 {
 					if err := qr.storeAddressEntries(censusRef, collectedEntries); err != nil {
-						log.Warn().Err(err).Str("query", queryID).Msg("Failed to store address entries")
+						log.Warnw("failed to store address entries", "error", err, "query", queryID)
 					}
 				}
 
 				elapsed := time.Since(startTime)
 				rate := float64(totalProcessed) / elapsed.Seconds()
-				log.Info().
-					Int("total", totalProcessed).
-					Dur("elapsed", elapsed).
-					Float64("rate", rate).
-					Str("query", queryID).
-					Msg("Census creation completed")
+				log.Infow("census creation completed", "total", totalProcessed, "elapsed", elapsed, "rate", rate, "query", queryID)
 
 				return totalProcessed, nil
 			}
@@ -95,10 +90,7 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 			// Prepare census entry
 			addressKey := participant.Address.Bytes()
 			if len(addressKey) > censusdb.CensusKeyMaxLen {
-				log.Warn().
-					Str("address", participant.Address.Hex()).
-					Str("query", queryID).
-					Msg("Address key too long, skipping")
+				log.Warnw("address key too long, skipping", "address", participant.Address.Hex(), "query", queryID)
 				continue
 			}
 
@@ -120,12 +112,7 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				if time.Since(lastLogTime) >= 10*time.Second {
 					elapsed := time.Since(startTime)
 					rate := float64(totalProcessed) / elapsed.Seconds()
-					log.Info().
-						Int("processed", totalProcessed).
-						Dur("elapsed", elapsed).
-						Float64("rate", rate).
-						Str("query", queryID).
-						Msg("Progress")
+					log.Infow("progress", "processed", totalProcessed, "elapsed", elapsed, "rate", rate, "query", queryID)
 					lastLogTime = time.Now()
 				}
 
@@ -213,18 +200,13 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				// Store collected address-weight entries
 				if storeAddresses && len(collectedEntries) > 0 {
 					if err := qr.storeAddressEntries(censusRef, collectedEntries); err != nil {
-						log.Warn().Err(err).Str("query", queryID).Msg("Failed to store address entries")
+						log.Warnw("failed to store address entries", "error", err, "query", queryID)
 					}
 				}
 
 				elapsed := time.Since(startTime)
 				rate := float64(totalProcessed) / elapsed.Seconds()
-				log.Info().
-					Int("total", totalProcessed).
-					Dur("elapsed", elapsed).
-					Float64("rate", rate).
-					Str("query", queryID).
-					Msg("Census creation completed")
+				log.Infow("census creation completed", "total", totalProcessed, "elapsed", elapsed, "rate", rate, "query", queryID)
 
 				return totalProcessed, nil
 			}
@@ -241,10 +223,7 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 			// Prepare census entry
 			addressKey := participant.Address.Bytes()
 			if len(addressKey) > censusdb.CensusKeyMaxLen {
-				log.Warn().
-					Str("address", participant.Address.Hex()).
-					Str("query", queryID).
-					Msg("Address key too long, skipping")
+				log.Warnw("address key too long, skipping", "address", participant.Address.Hex(), "query", queryID)
 				continue
 			}
 
@@ -266,12 +245,7 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				if time.Since(lastLogTime) >= 10*time.Second {
 					elapsed := time.Since(startTime)
 					rate := float64(totalProcessed) / elapsed.Seconds()
-					log.Info().
-						Int("processed", totalProcessed).
-						Dur("elapsed", elapsed).
-						Float64("rate", rate).
-						Str("query", queryID).
-						Msg("Progress")
+					log.Infow("progress", "processed", totalProcessed, "elapsed", elapsed, "rate", rate, "query", queryID)
 					lastLogTime = time.Now()
 				}
 
@@ -303,11 +277,7 @@ func (qr *QueryRunner) storeAddressEntries(censusRef *censusdb.CensusRef, entrie
 
 	for _, entry := range entries {
 		if err := collector.AddAddressWithWeight(entry.Address, entry.Weight); err != nil {
-			log.Warn().
-				Err(err).
-				Str("address", entry.Address).
-				Float64("weight", entry.Weight).
-				Msg("Failed to add address entry")
+			log.Warnw("failed to add address entry", "error", err, "address", entry.Address, "weight", entry.Weight)
 		}
 	}
 
@@ -315,10 +285,7 @@ func (qr *QueryRunner) storeAddressEntries(censusRef *censusdb.CensusRef, entrie
 		return fmt.Errorf("finalize address collection: %w", err)
 	}
 
-	log.Info().
-		Str("census_root", finalRoot.String()).
-		Int("entries", len(entries)).
-		Msg("Stored address entries")
+	log.Infow("stored address entries", "censusRoot", finalRoot.String(), "entries", len(entries))
 
 	return nil
 }

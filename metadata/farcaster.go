@@ -1,10 +1,10 @@
 package metadata
 
 import (
-	"census3-bigquery/config"
-	"census3-bigquery/log"
-	"census3-bigquery/neynar"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/neynar"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,17 +52,12 @@ func NewFarcasterProcessor(neynarClient *neynar.Client, storage *storage.KVSnaps
 // ProcessCensus processes a census to extract Farcaster metadata using stored addresses
 // This method uses stored addresses, queries Neynar API, and stores the results
 func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRoot types.HexBytes, addresses []string, weights map[string]float64, farcasterConfig *config.FarcasterConfig) error {
-	log.Info().
-		Str("census_root", censusRoot.String()).
-		Int("total_addresses", len(addresses)).
-		Msg("Starting Farcaster metadata processing")
+	log.Infow("starting Farcaster metadata processing", "censusRoot", censusRoot.String(), "totalAddresses", len(addresses))
 
 	startTime := time.Now()
 
 	if len(addresses) == 0 {
-		log.Info().
-			Str("census_root", censusRoot.String()).
-			Msg("No addresses provided, skipping Farcaster metadata processing")
+		log.Infow("no addresses provided, skipping Farcaster metadata processing", "censusRoot", censusRoot.String())
 		return nil
 	}
 
@@ -70,18 +65,11 @@ func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRoot type
 	validAddresses := fp.filterValidAddresses(addresses)
 
 	if len(validAddresses) == 0 {
-		log.Info().
-			Str("census_root", censusRoot.String()).
-			Int("original_count", len(addresses)).
-			Msg("No valid addresses found after filtering, skipping Farcaster metadata processing")
+		log.Infow("no valid addresses found after filtering, skipping Farcaster metadata processing", "censusRoot", censusRoot.String(), "originalCount", len(addresses))
 		return nil
 	}
 
-	log.Info().
-		Str("census_root", censusRoot.String()).
-		Int("original_addresses", len(addresses)).
-		Int("valid_addresses", len(validAddresses)).
-		Msg("Filtered addresses for Neynar API")
+	log.Infow("filtered addresses for Neynar API", "censusRoot", censusRoot.String(), "originalAddresses", len(addresses), "validAddresses", len(validAddresses))
 
 	// Create Neynar client with the provided API key
 	neynarClient := neynar.NewClient(farcasterConfig.NeynarAPIKey)
@@ -115,13 +103,7 @@ func (fp *FarcasterProcessor) ProcessCensus(ctx context.Context, censusRoot type
 	}
 
 	elapsed := time.Since(startTime)
-	log.Info().
-		Str("census_root", censusRoot.String()).
-		Int("total_addresses", len(addresses)).
-		Int("valid_addresses", len(validAddresses)).
-		Int("farcaster_users_found", len(farcasterUsers)).
-		Str("duration", elapsed.String()).
-		Msg("Farcaster metadata processing completed successfully")
+	log.Infow("Farcaster metadata processing completed successfully", "censusRoot", censusRoot.String(), "totalAddresses", len(addresses), "validAddresses", len(validAddresses), "farcasterUsersFound", len(farcasterUsers), "duration", elapsed.String())
 
 	return nil
 }
@@ -132,10 +114,7 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 	// Group users by FID to aggregate weights for multiple addresses
 	userAggregation := make(map[int64]*FarcasterUserAggregation)
 
-	log.Debug().
-		Int("neynar_addresses", len(neynarUsers)).
-		Int("weight_entries", len(weights)).
-		Msg("Starting Farcaster user processing and weight aggregation")
+	log.Debugw("starting Farcaster user processing and weight aggregation", "neynarAddresses", len(neynarUsers), "weightEntries", len(weights))
 
 	for address, users := range neynarUsers {
 		// Try multiple address formats to find the weight
@@ -146,10 +125,7 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 		if w, exists := weights[address]; exists {
 			weight = w
 			weightFound = true
-			log.Debug().
-				Str("address", address).
-				Float64("weight", weight).
-				Msg("Found weight with exact address format")
+			log.Debugw("found weight with exact address format", "address", address, "weight", weight)
 		} else {
 			// Try normalized lowercase format
 			normalizedAddress := strings.ToLower(address)
@@ -159,22 +135,14 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 			if w, exists := weights[normalizedAddress]; exists {
 				weight = w
 				weightFound = true
-				log.Debug().
-					Str("address", address).
-					Str("normalized", normalizedAddress).
-					Float64("weight", weight).
-					Msg("Found weight with normalized address format")
+				log.Debugw("found weight with normalized address format", "address", address, "normalized", normalizedAddress, "weight", weight)
 			} else {
 				// Try all stored addresses to find a case-insensitive match
 				for storedAddr, w := range weights {
 					if strings.EqualFold(address, storedAddr) {
 						weight = w
 						weightFound = true
-						log.Debug().
-							Str("address", address).
-							Str("stored_addr", storedAddr).
-							Float64("weight", weight).
-							Msg("Found weight with case-insensitive match")
+						log.Debugw("found weight with case-insensitive match", "address", address, "storedAddr", storedAddr, "weight", weight)
 						break
 					}
 				}
@@ -183,33 +151,19 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 
 		if !weightFound {
 			weight = 1.0 // Default weight
-			log.Warn().
-				Str("address", address).
-				Float64("default_weight", weight).
-				Msg("No weight found for address, using default")
+			log.Warnw("no weight found for address, using default", "address", address, "defaultWeight", weight)
 		}
 
 		// Process each user for this address
 		for _, user := range users {
-			log.Debug().
-				Str("address", address).
-				Str("username", user.Username).
-				Int64("fid", user.FID).
-				Float64("weight", weight).
-				Msg("Processing user for address")
+			log.Debugw("processing user for address", "address", address, "username", user.Username, "fid", user.FID, "weight", weight)
 
 			if existing, exists := userAggregation[user.FID]; exists {
 				// User already exists, aggregate the weight
 				oldWeight := existing.TotalWeight
 				existing.TotalWeight += weight
 				existing.Addresses = append(existing.Addresses, address)
-				log.Debug().
-					Str("username", user.Username).
-					Int64("fid", user.FID).
-					Float64("old_weight", oldWeight).
-					Float64("added_weight", weight).
-					Float64("new_total", existing.TotalWeight).
-					Msg("Aggregated weight for existing user")
+				log.Debugw("aggregated weight for existing user", "username", user.Username, "fid", user.FID, "oldWeight", oldWeight, "addedWeight", weight, "newTotal", existing.TotalWeight)
 			} else {
 				// New user, create aggregation entry
 				userAggregation[user.FID] = &FarcasterUserAggregation{
@@ -218,11 +172,7 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 					TotalWeight: weight,
 					Addresses:   []string{address},
 				}
-				log.Debug().
-					Str("username", user.Username).
-					Int64("fid", user.FID).
-					Float64("initial_weight", weight).
-					Msg("Created new user aggregation")
+				log.Debugw("created new user aggregation", "username", user.Username, "fid", user.FID, "initialWeight", weight)
 			}
 		}
 	}
@@ -241,20 +191,10 @@ func (fp *FarcasterProcessor) processFarcasterUsers(neynarUsers map[string][]ney
 		}
 		farcasterUsers = append(farcasterUsers, farcasterUser)
 
-		log.Debug().
-			Str("username", farcasterUser.Username).
-			Int64("fid", farcasterUser.FID).
-			Float64("final_weight", farcasterUser.Weight).
-			Int("address_count", len(aggregation.Addresses)).
-			Str("primary_address", primaryAddress).
-			Msg("Created final Farcaster user entry")
+		log.Debugw("created final Farcaster user entry", "username", farcasterUser.Username, "fid", farcasterUser.FID, "finalWeight", farcasterUser.Weight, "addressCount", len(aggregation.Addresses), "primaryAddress", primaryAddress)
 	}
 
-	log.Info().
-		Int("total_users", len(farcasterUsers)).
-		Int("unique_addresses", len(neynarUsers)).
-		Int("aggregated_users", len(userAggregation)).
-		Msg("Processed and aggregated Farcaster users from Neynar API results")
+	log.Infow("processed and aggregated Farcaster users from Neynar API results", "totalUsers", len(farcasterUsers), "uniqueAddresses", len(neynarUsers), "aggregatedUsers", len(userAggregation))
 
 	return farcasterUsers
 }
@@ -304,9 +244,7 @@ func (fp *FarcasterProcessor) filterValidAddresses(addresses []string) []string 
 		// Skip zero addresses
 		if address == "0x0000000000000000000000000000000000000000000000000000000000000000" ||
 			address == "0x0000000000000000000000000000000000000000" {
-			log.Debug().
-				Str("address", address).
-				Msg("Skipping zero address")
+			log.Debugw("skipping zero address", "address", address)
 			continue
 		}
 
@@ -317,26 +255,20 @@ func (fp *FarcasterProcessor) filterValidAddresses(addresses []string) []string 
 
 		// Skip addresses that are too short (less than 40 hex chars + 0x prefix)
 		if len(address) < 42 {
-			log.Debug().
-				Str("address", address).
-				Msg("Skipping address that is too short")
+			log.Debugw("skipping address that is too short", "address", address)
 			continue
 		}
 
 		// Skip addresses that are too long (more than 42 chars)
 		if len(address) > 42 {
-			log.Debug().
-				Str("address", address).
-				Msg("Skipping address that is too long")
+			log.Debugw("skipping address that is too long", "address", address)
 			continue
 		}
 
 		// Validate hex format (basic check)
 		hexPart := address[2:] // Remove 0x prefix
 		if len(hexPart) != 40 {
-			log.Debug().
-				Str("address", address).
-				Msg("Skipping address with invalid length")
+			log.Debugw("skipping address with invalid length", "address", address)
 			continue
 		}
 
@@ -350,19 +282,14 @@ func (fp *FarcasterProcessor) filterValidAddresses(addresses []string) []string 
 		}
 
 		if !validHex {
-			log.Debug().
-				Str("address", address).
-				Msg("Skipping address with invalid hex characters")
+			log.Debugw("skipping address with invalid hex characters", "address", address)
 			continue
 		}
 
 		validAddresses = append(validAddresses, address)
 	}
 
-	log.Debug().
-		Int("original_count", len(addresses)).
-		Int("valid_count", len(validAddresses)).
-		Msg("Address filtering completed")
+	log.Debugw("address filtering completed", "originalCount", len(addresses), "validCount", len(validAddresses))
 
 	return validAddresses
 }

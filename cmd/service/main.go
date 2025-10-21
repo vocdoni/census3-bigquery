@@ -1,11 +1,12 @@
 package main
 
 import (
-	"census3-bigquery/bigquery"
-	"census3-bigquery/config"
-	"census3-bigquery/log"
-	"census3-bigquery/service"
 	"os"
+
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/service"
+	"github.com/vocdoni/davinci-node/log"
 
 	"github.com/spf13/pflag"
 )
@@ -24,24 +25,22 @@ func main() {
 	}
 
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Set log level from configuration
-	if err := log.SetLevelFromString(cfg.LogLevel); err != nil {
-		log.Fatal().Err(err).Msg("Failed to set log level")
-	}
-	log.Info().Str("log_level", cfg.LogLevel).Msg("Log level configured")
+	// Initialize log with the configured level
+	log.Init(cfg.LogLevel, "stderr", nil)
+	log.Infof("Log level configured: %s", cfg.LogLevel)
 
 	// Create and start service
 	svc, err := service.New(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create service")
+		log.Fatalf("Failed to create service: %v", err)
 	}
 
 	// Start service (blocks until shutdown)
 	if err := svc.Start(); err != nil {
-		log.Fatal().Err(err).Msg("Service error")
+		log.Fatalf("Service error: %v", err)
 	}
 
 	os.Exit(0)

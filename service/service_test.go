@@ -1,9 +1,9 @@
 package service
 
 import (
-	"census3-bigquery/bigquery"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
 	"context"
 	"math/big"
 	"testing"

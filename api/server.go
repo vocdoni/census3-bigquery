@@ -2,9 +2,9 @@ package api
 
 import (
 	"bytes"
-	"census3-bigquery/censusdb"
-	"census3-bigquery/log"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/davinci-node/log"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -166,18 +166,16 @@ func (s *Server) setupRouter() {
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
-	log.Info().Str("address", addr).Msg("HTTP server binding to address...")
+	log.Infow("HTTP server binding to address...", "address", addr)
 
 	// Log when server is ready to accept connections
 	go func() {
 		// Small delay to ensure the server has started
 		time.Sleep(50 * time.Millisecond)
-		log.Info().
-			Str("address", addr).
-			Msg("API server ready to accept requests")
+		log.Infow("API server ready to accept requests", "address", addr)
 	}()
 
-	log.Info().Str("address", addr).Msg("Starting HTTP server...")
+	log.Infow("starting HTTP server...", "address", addr)
 	return http.ListenAndServe(addr, s.router)
 }
 
@@ -257,7 +255,7 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting snapshots")
+		log.Errorw(err, "error getting snapshots")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -307,7 +305,7 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	// Set content type and encode response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error().Err(err).Msg("Error encoding snapshots response")
+		log.Errorw(err, "error encoding snapshots response")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -318,7 +316,7 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Get latest snapshot from storage
 	latest, err := s.storage.LatestSnapshot()
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting latest snapshot")
+		log.Errorw(err, "error getting latest snapshot")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -344,7 +342,7 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Set content type and encode response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error().Err(err).Msg("Error encoding latest snapshot response")
+		log.Errorw(err, "error encoding latest snapshot response")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -362,7 +360,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error().Err(err).Msg("Error encoding health response")
+		log.Errorw(err, "error encoding health response")
 	}
 }
 
@@ -704,7 +702,7 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 	// Schedule cleanup of working census
 	go func() {
 		if err := s.censusDB.CleanupWorkingCensus(censusID); err != nil {
-			log.Error().Str("census_id", censusID.String()).Err(err).Msg("Failed to cleanup working census")
+			log.Errorw(err, "failed to cleanup working census")
 		}
 	}()
 
@@ -756,7 +754,7 @@ func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request)
 	// Get Farcaster metadata from storage
 	metadataJSON, err := s.storage.GetMetadata("meta_farcaster", censusRoot)
 	if err != nil {
-		log.Error().Err(err).Str("census_root", censusRoot.String()).Msg("Error getting Farcaster metadata")
+		log.Errorw(err, "error getting Farcaster metadata")
 		ErrGenericInternalServerError.WithErr(err).Write(w)
 		return
 	}
@@ -769,7 +767,7 @@ func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request)
 	// Return the JSON metadata directly
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(metadataJSON); err != nil {
-		log.Error().Err(err).Msg("Error writing Farcaster metadata response")
+		log.Errorw(err, "error writing Farcaster metadata response")
 		ErrGenericInternalServerError.WithErr(err).Write(w)
 		return
 	}

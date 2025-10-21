@@ -1,10 +1,10 @@
 package metadata
 
 import (
-	"census3-bigquery/censusdb"
-	"census3-bigquery/config"
-	"census3-bigquery/neynar"
-	"census3-bigquery/storage"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/neynar"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"encoding/json"
 	"testing"
 	"time"

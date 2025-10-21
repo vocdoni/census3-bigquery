@@ -67,6 +67,10 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/decred/dcrd/crypto/blake256 v1.1.0 h1:zPMNGQCm0g4QTY27fOCorQW7EryeQ/U0x++OzVrdms8=
+github.com/decred/dcrd/crypto/blake256 v1.1.0/go.mod h1:2OfgNZ5wDpcsFmHmCK5gZTPcCXqlm2ArzUIkw9czNJo=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 h1:NMZiJj8QnKe1LgsbDayM4UoHwbvwDRwnI3hwNaAHRnc=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/envoyproxy/go-control-plane v0.13.4 h1:zEqyPVyku6IvWCFwux4x9RxkLOMUL+1vC9xUFv5l2/M=
@@ -273,8 +277,6 @@ github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d h1:vfofYNRScrDd
 github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d/go.mod h1:RRCYJbIwD5jmqPI9XoAFR0OcDxqUctll6zUj/+B4S48=
 github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5 h1:wtUK5E131x07zdxnAGRIt2wl5BzwmfoXZ1V4s+kPQc8=
 github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5/go.mod h1:SUsNx5GJJunlEMBo6ETTmys88B4bkTgqNV5N1jN3iic=
-github.com/vocdoni/davinci-node v0.0.0-20250915100545-11fc394dd80c h1:onErCyKOoZmjCqc7BlQKpDTbokPbXY1HydskJZvdjT4=
-github.com/vocdoni/davinci-node v0.0.0-20250915100545-11fc394dd80c/go.mod h1:S2q7oNu9e3njxBqGoI/x72v2DTfyOoh9aeVo3Wv/u9I=
 github.com/vocdoni/lean-imt-go v0.0.0-20251002083034-be3d942711bf h1:HJ+Zs/bWCUqFpKJ0zTJXr80rnh8C7tc65HNruoPl6EE=
 github.com/vocdoni/lean-imt-go v0.0.0-20251002083034-be3d942711bf/go.mod h1:td3j8rydLQRGcizIiXV7kp2FErbduOgxJMp3bQhR24E=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=

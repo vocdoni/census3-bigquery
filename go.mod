@@ -8,7 +8,6 @@ require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-chi/chi/v5 v5.2.2
 	github.com/google/uuid v1.6.0
-	github.com/rs/zerolog v1.34.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0
 	github.com/vocdoni/davinci-node v0.0.0-20250915100545-11fc394dd80c
@@ -35,6 +34,7 @@ require (
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
 	github.com/consensys/gnark-crypto v0.19.0 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
@@ -73,6 +73,7 @@ require (
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
@@ -115,3 +116,5 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+replace github.com/vocdoni/davinci-node => ..
