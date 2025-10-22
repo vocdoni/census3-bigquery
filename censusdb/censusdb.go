@@ -2,7 +2,6 @@ package censusdb
 
 import (
 	"bytes"
-	"github.com/vocdoni/davinci-node/log"
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/vocdoni/davinci-node/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/uuid"
@@ -738,4 +739,11 @@ func unpackSiblings(packed []byte) []*big.Int {
 		siblings[i] = new(big.Int).SetBytes(packed[i*32 : (i+1)*32])
 	}
 	return siblings
+}
+
+// BigIntSiblings converts packed siblings bytes to a slice of big.Int siblings.
+// This is a public wrapper for unpackSiblings, provided for compatibility with
+// existing code that expects big.Int siblings.
+func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
+	return unpackSiblings(siblings), nil
 }

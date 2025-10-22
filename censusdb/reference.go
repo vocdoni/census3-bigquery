@@ -98,7 +98,7 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]interface{}, error) {
 		weights[i] = new(big.Int).SetBytes(values[i])
 	}
 
-	// Add bulk (returns only error, no invalids list)
+	// Add bulk
 	err := cr.tree.AddBulk(addresses, weights)
 	if err != nil {
 		return nil, err
