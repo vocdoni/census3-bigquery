@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0
-	github.com/vocdoni/davinci-node v0.0.0-20250915100545-11fc394dd80c
+	github.com/vocdoni/davinci-node v0.0.0-20251027112916-aedf03a3c5dc
 	github.com/vocdoni/lean-imt-go v0.0.0-20251002083034-be3d942711bf
 	google.golang.org/api v0.237.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -116,5 +116,3 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
-
-replace github.com/vocdoni/davinci-node => ..

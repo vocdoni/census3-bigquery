@@ -39,7 +39,7 @@ func (cr *CensusRef) SetTree(tree *census.CensusIMT) {
 
 // Insert safely inserts a key/value pair into the Merkle tree.
 // It holds treeMu during the Add and Root calls.
-// For lean-imt census, key must be exactly 20 bytes (Ethereum address).
+// Key must be exactly 20 bytes (Ethereum address).
 func (cr *CensusRef) Insert(key, value []byte) error {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
@@ -159,20 +159,20 @@ func (cr *CensusRef) Size() int {
 }
 
 // GenProof safely generates a Merkle proof for the given leaf key.
-// It returns the proof components and an inclusion boolean.
+// It returns the proof components (key, value, siblings, index) and an inclusion boolean.
 // For lean-imt, key must be a 20-byte Ethereum address.
-func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, bool, error) {
+func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, uint64, bool, error) {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
 	if len(key) != 20 {
-		return nil, nil, nil, false, fmt.Errorf("key must be 20 bytes")
+		return nil, nil, nil, 0, false, fmt.Errorf("key must be 20 bytes")
 	}
 	addr := common.BytesToAddress(key)
 
 	proof, err := cr.tree.GenerateProof(addr)
 	if err != nil {
-		return nil, nil, nil, false, err
+		return nil, nil, nil, 0, false, err
 	}
 
 	// Reconstruct packed value from address and weight: packed = (address << 88) | weight
@@ -181,12 +181,12 @@ func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, bool, error) 
 
 	siblings := packSiblings(proof.Siblings)
 
-	return key, packedValue.Bytes(), siblings, true, nil
+	return key, packedValue.Bytes(), siblings, proof.Index, true, nil
 }
 
 // VerifyProof verifies a Merkle proof for the given leaf key.
 // Uses lean-imt verification with the configured hash function.
-func VerifyProof(key, value, root, siblings []byte) bool {
+func VerifyProof(key, value, root, siblings []byte, index uint64) bool {
 	// Unpack siblings from bytes to []*big.Int
 	siblingsUnpacked := unpackSiblings(siblings)
 
@@ -194,7 +194,7 @@ func VerifyProof(key, value, root, siblings []byte) bool {
 	merkleProof := leanimt.MerkleProof[*big.Int]{
 		Root:     new(big.Int).SetBytes(root),
 		Leaf:     new(big.Int).SetBytes(value),
-		Index:    0, // Index not used in this verification path
+		Index:    index,
 		Siblings: siblingsUnpacked,
 	}
 
