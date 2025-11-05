@@ -1,9 +1,6 @@
 package service
 
 import (
-	"github.com/vocdoni/census3-bigquery/bigquery"
-	"github.com/vocdoni/census3-bigquery/censusdb"
-	"github.com/vocdoni/census3-bigquery/config"
 	"context"
 	"math/big"
 	"testing"
@@ -12,6 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
 	"github.com/vocdoni/davinci-node/db/metadb"
 )
 

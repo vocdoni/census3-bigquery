@@ -1,7 +1,6 @@
 package bigquery
 
 import (
-	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"fmt"
 	"math/big"
@@ -10,6 +9,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/vocdoni/davinci-node/log"
 	"google.golang.org/api/iterator"
 )
 

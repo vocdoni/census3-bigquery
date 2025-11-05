@@ -1,7 +1,6 @@
 package neynar
 
 import (
-	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/vocdoni/davinci-node/log"
 )
 
 const (

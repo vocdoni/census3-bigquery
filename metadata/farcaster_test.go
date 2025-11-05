@@ -1,16 +1,16 @@
 package metadata
 
 import (
-	"github.com/vocdoni/census3-bigquery/censusdb"
-	"github.com/vocdoni/census3-bigquery/config"
-	"github.com/vocdoni/census3-bigquery/neynar"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/neynar"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"

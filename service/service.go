@@ -3,13 +3,6 @@
 package service
 
 import (
-	"github.com/vocdoni/census3-bigquery/alchemy"
-	"github.com/vocdoni/census3-bigquery/api"
-	"github.com/vocdoni/census3-bigquery/bigquery"
-	"github.com/vocdoni/census3-bigquery/censusdb"
-	"github.com/vocdoni/census3-bigquery/config"
-	"github.com/vocdoni/davinci-node/log"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"context"
 	"fmt"
 	"os"
@@ -18,8 +11,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vocdoni/census3-bigquery/alchemy"
+	"github.com/vocdoni/census3-bigquery/api"
+	"github.com/vocdoni/census3-bigquery/bigquery"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/storage"
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/db/metadb"
+	"github.com/vocdoni/davinci-node/log"
 )
 
 // DataSourceClient defines the interface for data source operations.

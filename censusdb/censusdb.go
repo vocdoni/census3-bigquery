@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,11 +17,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/uuid"
-	leanimt "github.com/vocdoni/lean-imt-go"
-	"github.com/vocdoni/lean-imt-go/census"
-
 	"github.com/vocdoni/davinci-node/db"
 	davincitypes "github.com/vocdoni/davinci-node/types"
+	leanimt "github.com/vocdoni/lean-imt-go"
+	"github.com/vocdoni/lean-imt-go/census"
+	leanimtcensus "github.com/vocdoni/lean-imt-go/census"
 )
 
 const (
@@ -104,7 +105,7 @@ func NewCensusDB(db db.Database) *CensusDB {
 // New creates a new working census with a UUID identifier and adds it to the database.
 // It returns ErrCensusAlreadyExists if a census with the given UUID is already present.
 func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
-	return c.newCensus(censusID, censusDBWorkingOnQueries, censusID[:])
+	return c.newCensus(censusID, censusDBWorkingOnQueries, censusID[:], nil)
 }
 
 // NewByRoot creates a new census identified by its root.
@@ -112,11 +113,12 @@ func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
 func (c *CensusDB) NewByRoot(root []byte) (*CensusRef, error) {
 	// Generate a deterministic UUID from the root for internal use
 	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root)
-	return c.newCensus(censusID, censusDBRootPrefix, root)
+	return c.newCensus(censusID, censusDBRootPrefix, root, nil)
 }
 
 // newCensus is the internal method that creates a new census with the given parameters.
-func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []byte) (*CensusRef, error) {
+// The tree parameter is optional; if nil, a new empty tree is created.
+func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []byte, tree *leanimtcensus.CensusIMT) (*CensusRef, error) {
 	key := append([]byte(prefix), keyIdentifier...)
 
 	c.mu.Lock()
@@ -143,17 +145,19 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []
 	}
 
 	// Create the census tree using leanimt with Pebble persistence and MiMC hasher.
-	censusTree, err := census.NewCensusIMTWithPebble(
-		censusPrefix(censusID),
-		censusHasher,
-	)
-	if err != nil {
-		return nil, err
+	if tree == nil {
+		var err error
+		if tree, err = census.NewCensusIMTWithPebble(
+			censusPrefix(censusID),
+			censusHasher,
+		); err != nil {
+			return nil, err
+		}
 	}
-	ref.SetTree(censusTree)
+	ref.SetTree(tree)
 
 	// Get the current root.
-	root, exists := censusTree.Root()
+	root, exists := tree.Root()
 	if !exists {
 		root = big.NewInt(0)
 	}
@@ -746,4 +750,32 @@ func unpackSiblings(packed []byte) []*big.Int {
 // existing code that expects big.Int siblings.
 func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
 	return unpackSiblings(siblings), nil
+}
+
+// Import imports a census from a JSON-encoded census dump. It decodes the
+// dump, creates a new census tree, and populates it with the data from the
+// dump. Then, it creates a new CensusRef with the imported tree and adds it
+// to the database. It returns the CensusRef and any error encountered during
+// the process, such as decoding errors or tree creation/import errors.
+func (c *CensusDB) Import(data []byte) (*CensusRef, error) {
+	// Decode the census dump from JSON
+	var dump leanimtcensus.CensusDump
+	if err := json.Unmarshal(data, &dump); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal census dump: %w", err)
+	}
+	// Create a new census tree by its root
+	censusID := uuid.NewSHA1(uuid.NameSpaceOID, dump.Root.Bytes())
+	tree, err := census.NewCensusIMTWithPebble(
+		censusPrefix(censusID),
+		censusHasher,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create census tree: %w", err)
+	}
+	// Import the dump into the tree
+	if err := tree.Import(&dump); err != nil {
+		return nil, fmt.Errorf("failed to import census dump into tree: %w", err)
+	}
+	// Create a new CensusRef with the imported tree
+	return c.newCensus(censusID, censusDBRootPrefix, dump.Root.Bytes(), tree)
 }

@@ -1,10 +1,11 @@
 package service
 
 import (
-	"github.com/vocdoni/census3-bigquery/config"
-	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"time"
+
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/davinci-node/log"
 )
 
 // QueryRunner executes a single query on a periodic schedule, creating census snapshots.

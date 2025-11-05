@@ -2,13 +2,13 @@ package storage
 
 import (
 	"bytes"
-	"github.com/vocdoni/davinci-node/log"
 	"encoding/gob"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/vocdoni/davinci-node/db"
+	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
 

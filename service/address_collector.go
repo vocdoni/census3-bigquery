@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/vocdoni/davinci-node/log"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"sync"
 
+	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
 

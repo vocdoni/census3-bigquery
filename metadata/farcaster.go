@@ -1,16 +1,16 @@
 package metadata
 
 import (
-	"github.com/vocdoni/census3-bigquery/config"
-	"github.com/vocdoni/davinci-node/log"
-	"github.com/vocdoni/census3-bigquery/neynar"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/vocdoni/census3-bigquery/config"
+	"github.com/vocdoni/census3-bigquery/neynar"
+	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
 

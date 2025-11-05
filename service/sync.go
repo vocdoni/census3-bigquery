@@ -1,15 +1,15 @@
 package service
 
 import (
-	"github.com/vocdoni/census3-bigquery/censusdb"
-	"github.com/vocdoni/davinci-node/log"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/uuid"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
 

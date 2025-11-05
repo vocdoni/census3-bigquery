@@ -1,7 +1,6 @@
 package alchemy
 
 import (
-	"github.com/vocdoni/davinci-node/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/vocdoni/davinci-node/log"
 )
 
 // Client wraps Alchemy API operations

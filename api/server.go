@@ -2,9 +2,6 @@ package api
 
 import (
 	"bytes"
-	"github.com/vocdoni/census3-bigquery/censusdb"
-	"github.com/vocdoni/davinci-node/log"
-	"github.com/vocdoni/census3-bigquery/storage"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,6 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"github.com/vocdoni/census3-bigquery/censusdb"
+	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
 
