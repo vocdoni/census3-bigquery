@@ -590,7 +590,7 @@ func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
 	packedValue.Or(packedValue, proof.Weight)
 
 	return &CensusProof{
-		CensusOrigin: davincitypes.CensusOriginMerkleTree,
+		CensusOrigin: davincitypes.CensusOriginMerkleTreeOffchainStaticV1,
 		Root:         proof.Root.Bytes(),
 		Address:      addr.Bytes(),
 		Value:        packedValue.Bytes(),
