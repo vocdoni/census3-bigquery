@@ -260,10 +260,6 @@ github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5 h1:wtUK5E131x07zdxnAG
 github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5/go.mod h1:SUsNx5GJJunlEMBo6ETTmys88B4bkTgqNV5N1jN3iic=
 github.com/vocdoni/davinci-node v0.0.0-20251112165135-13b466410b24 h1:ybcXz6qpe332+HTI15WXdWjkvRUWmNg44t0DYBT3AZA=
 github.com/vocdoni/davinci-node v0.0.0-20251112165135-13b466410b24/go.mod h1:5QtPGzGGfkkCmt8bWm8YFMZoSOtNXaeDXTeIhJYoPSU=
-github.com/vocdoni/lean-imt-go v0.0.0-20251105170711-67328b0a2698 h1:E0F9+VVaAbFtjE+A7fScFGfGObNOZmzct/B5SQj6RQ0=
-github.com/vocdoni/lean-imt-go v0.0.0-20251105170711-67328b0a2698/go.mod h1:ec+yxmDwLMfPm6cl9eAc4HGicdyAwKIsh/U45ZTSFFQ=
-github.com/vocdoni/lean-imt-go v0.0.0-20251113095305-7d8d706d273b h1:23LqX397wKa7S90ycogFvegVlObbobRxkOLIpMZafDo=
-github.com/vocdoni/lean-imt-go v0.0.0-20251113095305-7d8d706d273b/go.mod h1:ec+yxmDwLMfPm6cl9eAc4HGicdyAwKIsh/U45ZTSFFQ=
 github.com/vocdoni/lean-imt-go v0.0.0-20251113104050-8d0ed61501e2 h1:RgrW+so4cvj2/101Vzj83DaZ5prYRDXU5V0ttUwXCus=
 github.com/vocdoni/lean-imt-go v0.0.0-20251113104050-8d0ed61501e2/go.mod h1:ec+yxmDwLMfPm6cl9eAc4HGicdyAwKIsh/U45ZTSFFQ=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
