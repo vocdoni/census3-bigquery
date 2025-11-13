@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -463,15 +464,93 @@ func (s *Server) handleCensusParticipants(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For now, we need to find the census by root and get all participants
-	// This is not the most efficient approach, but it works with the current censusdb API
-	// TODO: Implement efficient pagination in censusdb
+	// Load census by root
+	ref, err := s.censusDB.LoadByRoot(root)
+	if err != nil {
+		ErrCensusNotFound.WithErr(err).Write(w)
+		return
+	}
 
-	// We need to find the census ID from the root first
-	// Since we don't have a direct way to do this efficiently, we'll return an error for now
-	// indicating that this endpoint needs the census to be loaded by ID
+	// Parse pagination parameters with custom defaults for this endpoint
+	page := 1
+	pageSize := 1000 // Fixed page size as requested
 
-	ErrGenericInternalServerError.With("participants endpoint requires census ID, not root - not yet implemented").Write(w)
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	// Calculate offset
+	offset := (page - 1) * pageSize
+
+	// Get total size
+	totalSize := ref.Size()
+
+	// Check if offset is beyond total size
+	if offset >= totalSize {
+		// Return empty response
+		response := CensusParticipantsResponse{
+			Participants: []CensusParticipant{},
+			Total:        totalSize,
+			Page:         page,
+			PageSize:     pageSize,
+			HasNext:      false,
+			HasPrev:      page > 1,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			ErrMarshalingServerJSONFailed.WithErr(err).Write(w)
+		}
+		return
+	}
+
+	// Use DumpRange to get participants for this page
+	// DumpRange returns an io.Reader that streams JSON Lines
+	reader := ref.Tree().DumpRange(offset, pageSize)
+
+	// Decode participants from JSON Lines
+	participants := make([]CensusParticipant, 0, pageSize)
+	decoder := json.NewDecoder(reader)
+
+	for decoder.More() {
+		var entry struct {
+			Index   uint64         `json:"index"`
+			Address common.Address `json:"address"`
+			Weight  *big.Int       `json:"weight"`
+		}
+		if err := decoder.Decode(&entry); err != nil {
+			ErrGenericInternalServerError.WithErr(err).Write(w)
+			return
+		}
+
+		// Convert to API response format
+		participant := CensusParticipant{
+			Key:    types.HexBytes(entry.Address.Bytes()),
+			Weight: (*types.BigInt)(entry.Weight),
+		}
+		participants = append(participants, participant)
+	}
+
+	// Calculate pagination flags
+	hasNext := offset+pageSize < totalSize
+	hasPrev := page > 1
+
+	// Build response
+	response := CensusParticipantsResponse{
+		Participants: participants,
+		Total:        totalSize,
+		Page:         page,
+		PageSize:     pageSize,
+		HasNext:      hasNext,
+		HasPrev:      hasPrev,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		ErrMarshalingServerJSONFailed.WithErr(err).Write(w)
+		return
+	}
 }
 
 // handleCreateCensus handles POST /censuses

@@ -21,7 +21,6 @@ import (
 	davincitypes "github.com/vocdoni/davinci-node/types"
 	leanimt "github.com/vocdoni/lean-imt-go"
 	"github.com/vocdoni/lean-imt-go/census"
-	leanimtcensus "github.com/vocdoni/lean-imt-go/census"
 )
 
 const (
@@ -118,7 +117,7 @@ func (c *CensusDB) NewByRoot(root []byte) (*CensusRef, error) {
 
 // newCensus is the internal method that creates a new census with the given parameters.
 // The tree parameter is optional; if nil, a new empty tree is created.
-func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []byte, tree *leanimtcensus.CensusIMT) (*CensusRef, error) {
+func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier []byte, tree *census.CensusIMT) (*CensusRef, error) {
 	key := append([]byte(prefix), keyIdentifier...)
 
 	c.mu.Lock()
@@ -759,7 +758,7 @@ func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
 // the process, such as decoding errors or tree creation/import errors.
 func (c *CensusDB) Import(data []byte) (*CensusRef, error) {
 	// Decode the census dump from JSON
-	var dump leanimtcensus.CensusDump
+	var dump census.CensusDump
 	if err := json.Unmarshal(data, &dump); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal census dump: %w", err)
 	}

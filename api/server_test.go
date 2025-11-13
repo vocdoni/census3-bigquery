@@ -518,7 +518,120 @@ func TestAPIServerCensusParticipants(t *testing.T) {
 	testCensus := createTestCensusDB(t)
 	server := NewServer(mockStore, testCensus, 8080, 1000000)
 
-	// Test census participants endpoint using the router (should return invalid census ID for short hex)
+	// Create a test census with multiple participants
+	censusID := uuid.New()
+	workingRef, err := testCensus.New(censusID)
+	c.Assert(err, quicktest.IsNil)
+
+	// Add 2500 test participants to test pagination
+	numParticipants := 2500
+	for i := 0; i < numParticipants; i++ {
+		// Create unique 20-byte addresses
+		addr := make([]byte, 20)
+		addr[0] = byte(i >> 8)
+		addr[1] = byte(i & 0xff)
+
+		// Create weight value
+		weight := make([]byte, 32)
+		weight[31] = byte(i + 1)
+
+		err = workingRef.Insert(addr, weight)
+		c.Assert(err, quicktest.IsNil)
+	}
+
+	// Get the census root
+	root := workingRef.Root()
+
+	// Create a root-based census and publish
+	rootRef, err := testCensus.NewByRoot(root)
+	c.Assert(err, quicktest.IsNil)
+
+	err = testCensus.PublishCensus(censusID, rootRef)
+	c.Assert(err, quicktest.IsNil)
+
+	rootHex := hex.EncodeToString(root)
+
+	// Test first page (default)
+	req := httptest.NewRequest("GET", "/censuses/"+rootHex+"/participants", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
+
+	var response CensusParticipantsResponse
+	err = json.NewDecoder(w.Body).Decode(&response)
+	c.Assert(err, quicktest.IsNil)
+
+	// Check pagination metadata
+	c.Assert(response.Total, quicktest.Equals, numParticipants)
+	c.Assert(response.Page, quicktest.Equals, 1)
+	c.Assert(response.PageSize, quicktest.Equals, 1000) // Fixed page size
+	c.Assert(response.HasNext, quicktest.IsTrue)
+	c.Assert(response.HasPrev, quicktest.IsFalse)
+	c.Assert(len(response.Participants), quicktest.Equals, 1000)
+
+	// Verify first participant
+	c.Assert(len(response.Participants[0].Key), quicktest.Equals, 20)
+	c.Assert(response.Participants[0].Weight, quicktest.IsNotNil)
+
+	// Test second page
+	req = httptest.NewRequest("GET", "/censuses/"+rootHex+"/participants?page=2", nil)
+	w = httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
+
+	err = json.NewDecoder(w.Body).Decode(&response)
+	c.Assert(err, quicktest.IsNil)
+
+	c.Assert(response.Page, quicktest.Equals, 2)
+	c.Assert(response.HasNext, quicktest.IsTrue)
+	c.Assert(response.HasPrev, quicktest.IsTrue)
+	c.Assert(len(response.Participants), quicktest.Equals, 1000)
+
+	// Test third page (last page with 500 participants)
+	req = httptest.NewRequest("GET", "/censuses/"+rootHex+"/participants?page=3", nil)
+	w = httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
+
+	err = json.NewDecoder(w.Body).Decode(&response)
+	c.Assert(err, quicktest.IsNil)
+
+	c.Assert(response.Page, quicktest.Equals, 3)
+	c.Assert(response.HasNext, quicktest.IsFalse)
+	c.Assert(response.HasPrev, quicktest.IsTrue)
+	c.Assert(len(response.Participants), quicktest.Equals, 500)
+
+	// Test page beyond available data
+	req = httptest.NewRequest("GET", "/censuses/"+rootHex+"/participants?page=10", nil)
+	w = httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
+
+	err = json.NewDecoder(w.Body).Decode(&response)
+	c.Assert(err, quicktest.IsNil)
+
+	c.Assert(response.Page, quicktest.Equals, 10)
+	c.Assert(response.HasNext, quicktest.IsFalse)
+	c.Assert(response.HasPrev, quicktest.IsTrue)
+	c.Assert(len(response.Participants), quicktest.Equals, 0)
+
+	// Cleanup
+	_ = workingRef.Tree().Close()
+	_ = rootRef.Tree().Close()
+}
+
+func TestAPIServerCensusParticipantsInvalidRoot(t *testing.T) {
+	c := quicktest.New(t)
+
+	mockStore := &mockStorage{}
+	testCensus := createTestCensusDB(t)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
+
+	// Test census participants endpoint with short hex (should return invalid census ID)
 	req := httptest.NewRequest("GET", "/censuses/010203/participants", nil)
 	w := httptest.NewRecorder()
 	server.router.ServeHTTP(w, req)
@@ -530,4 +643,31 @@ func TestAPIServerCensusParticipants(t *testing.T) {
 	c.Assert(err, quicktest.IsNil)
 
 	c.Assert(response.Code, quicktest.Equals, 40010) // ErrInvalidCensusID
+}
+
+func TestAPIServerCensusParticipantsNotFound(t *testing.T) {
+	c := quicktest.New(t)
+
+	mockStore := &mockStorage{}
+	testCensus := createTestCensusDB(t)
+	server := NewServer(mockStore, testCensus, 8080, 1000000)
+
+	// Test census participants endpoint with non-existent root
+	nonExistentRoot := make([]byte, 32)
+	for i := range nonExistentRoot {
+		nonExistentRoot[i] = 0xff
+	}
+	rootHex := hex.EncodeToString(nonExistentRoot)
+
+	req := httptest.NewRequest("GET", "/censuses/"+rootHex+"/participants", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	c.Assert(w.Code, quicktest.Equals, http.StatusNotFound)
+
+	var response ErrorResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	c.Assert(err, quicktest.IsNil)
+
+	c.Assert(response.Code, quicktest.Equals, 40011) // ErrCensusNotFound
 }
