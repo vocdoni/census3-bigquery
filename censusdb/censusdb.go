@@ -773,7 +773,7 @@ func (c *CensusDB) Import(data []byte) (*CensusRef, error) {
 		return nil, fmt.Errorf("failed to create census tree: %w", err)
 	}
 	// Import the dump into the tree
-	if err := tree.Import(&dump); err != nil {
+	if err := tree.ImportAll(&dump); err != nil {
 		return nil, fmt.Errorf("failed to import census dump into tree: %w", err)
 	}
 	// Create a new CensusRef with the imported tree

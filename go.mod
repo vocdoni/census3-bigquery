@@ -11,7 +11,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/vocdoni/davinci-node v0.0.0-20251112165135-13b466410b24
-	github.com/vocdoni/lean-imt-go v0.0.0-20251105170711-67328b0a2698
+	github.com/vocdoni/lean-imt-go v0.0.0-20251113104050-8d0ed61501e2
 	google.golang.org/api v0.255.0
 	gopkg.in/yaml.v3 v3.0.1
 )
