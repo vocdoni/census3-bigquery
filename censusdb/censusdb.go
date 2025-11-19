@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -751,12 +752,35 @@ func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
 	return unpackSiblings(siblings), nil
 }
 
-// Import imports a census from a JSON-encoded census dump. It decodes the
+// Import imports a census from a JSON-encoded census dump read from an
+// io.Reader. It creates a new census tree, populates it with the data from the
+// dump, and creates a new CensusRef with the imported tree. It returns the
+// CensusRef and any error encountered during the process, such as decoding
+// errors or tree creation/import errors.
+func (c *CensusDB) Import(root *big.Int, reader io.Reader) (*CensusRef, error) {
+	// Create a new census tree by its root
+	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root.Bytes())
+	tree, err := census.NewCensusIMTWithPebble(
+		censusPrefix(censusID),
+		censusHasher,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create census tree: %w", err)
+	}
+	// Import the dump into the tree
+	if err := tree.Import(root, reader); err != nil {
+		return nil, fmt.Errorf("failed to import census dump into tree: %w", err)
+	}
+	// Create a new CensusRef with the imported tree
+	return c.newCensus(censusID, censusDBRootPrefix, root.Bytes(), tree)
+}
+
+// ImportAll imports a census from a JSON-encoded census dump. It decodes the
 // dump, creates a new census tree, and populates it with the data from the
 // dump. Then, it creates a new CensusRef with the imported tree and adds it
 // to the database. It returns the CensusRef and any error encountered during
 // the process, such as decoding errors or tree creation/import errors.
-func (c *CensusDB) Import(data []byte) (*CensusRef, error) {
+func (c *CensusDB) ImportAll(data []byte) (*CensusRef, error) {
 	// Decode the census dump from JSON
 	var dump census.CensusDump
 	if err := json.Unmarshal(data, &dump); err != nil {
