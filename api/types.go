@@ -16,6 +16,11 @@ type CensusSizeResponse struct {
 	Size int `json:"size"`
 }
 
+// CensusURIResponse represents the response for the census URI endpoint
+type CensusURIResponse struct {
+	URI string `json:"uri"`
+}
+
 // CensusRootResponse represents the response for the census root endpoint
 type CensusRootResponse struct {
 	Root types.HexBytes `json:"root"`

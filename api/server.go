@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -74,6 +75,7 @@ type PublishCensusResponse struct {
 	ParticipantCount int            `json:"participantCount"`
 	CreatedAt        string         `json:"createdAt"`
 	PublishedAt      string         `json:"publishedAt"`
+	CensusURI        string         `json:"censusUri,omitempty"`
 }
 
 // SnapshotResponse represents the API response for snapshots
@@ -150,11 +152,13 @@ func (s *Server) setupRouter() {
 	r.Post("/censuses/{censusId}/participants", s.handleAddParticipants)
 	r.Get("/censuses/{censusId}/participants", s.handleGetParticipants)
 	r.Get("/censuses/{censusId}/root", s.handleGetRoot)
+	r.Get("/censuses/{censusId}/dump", s.handleGetDump)
 	r.Post("/censuses/{censusId}/publish", s.handlePublishCensus)
 	r.Delete("/censuses/{censusId}", s.handleDeleteCensus)
 
 	// Census query endpoints (support both UUID and root)
 	r.Get("/censuses/{censusId}/size", s.handleCensusSize)
+	r.Get("/censuses/{censusId}/uri", s.handleCensusURI)
 	r.Get("/censuses/{censusRoot}/proof", s.handleCensusProof)
 	r.Get("/censuses/{censusRoot}/participants", s.handleCensusParticipants)
 
@@ -400,6 +404,46 @@ func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := CensusSizeResponse{
 		Size: size,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		ErrMarshalingServerJSONFailed.WithErr(err).Write(w)
+		return
+	}
+}
+
+// handleCensusSize handles GET /censuses/{censusId}/size (supports both UUID and root)
+func (s *Server) handleCensusURI(w http.ResponseWriter, r *http.Request) {
+	censusParam := chi.URLParam(r, "censusId")
+
+	// Try to parse as UUID first (for working censuses)
+	var err error
+	var censusID uuid.UUID
+	if censusID, err = uuid.Parse(censusParam); err == nil {
+		// Load working census and get size
+		if _, loadErr := s.censusDB.Load(censusID); loadErr != nil {
+			ErrCensusNotFound.WithErr(loadErr).Write(w)
+			return
+		}
+	} else {
+		// Try to parse as root hex (for published censuses)
+		root, hexErr := hex.DecodeString(strings.TrimPrefix(censusParam, "0x"))
+		if hexErr != nil {
+			ErrInvalidCensusID.WithErr(hexErr).Write(w)
+			return
+		}
+		ref, loadErr := s.censusDB.LoadByRoot(root)
+		if loadErr != nil {
+			ErrCensusNotFound.WithErr(loadErr).Write(w)
+			return
+		}
+		censusID = ref.ID
+	}
+
+	// Return response
+	w.Header().Set("Content-Type", "application/json")
+	response := CensusURIResponse{
+		URI: censusURIByID(censusID),
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -706,6 +750,65 @@ func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleGetDump handles GET /censuses/{censusId}/dump to stream census dump
+// as a JSONL response
+func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
+	// Stream census dump as JSON Lines
+	w.Header().Set("Content-Type", "application/x-ndjson")
+
+	// Parse census ID
+	censusID, err := uuid.Parse(chi.URLParam(r, "censusId"))
+	if err != nil {
+		ErrInvalidCensusID.WithErr(err).Write(w)
+		return
+	}
+	// Load the census
+	ref, err := s.censusDB.Load(censusID)
+	if err != nil {
+		ErrGenericInternalServerError.WithErr(err).Write(w)
+		return
+	}
+	// Get the dump reader to stream the census dump
+	dumpReader := ref.Tree().Dump()
+	if closer, ok := dumpReader.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				log.Warnw("error closing dump reader", "err", err, "censusId", censusID.String())
+			}
+		}()
+	}
+	// Crate a single buffer to reuse
+	buf := make([]byte, 32*1024) // 32KB
+	for {
+		// Check if the request context is done (client disconnected)
+		select {
+		case <-r.Context().Done():
+			log.Infow("request cancelled by client", "censusID", censusID.String())
+			return
+		default:
+		}
+		// Read from dump and write to response
+		nRead, readErr := dumpReader.Read(buf)
+		if nRead > 0 {
+			if _, writeErr := w.Write(buf[:nRead]); writeErr != nil {
+				log.Errorf("error writing census dump with id '%s' to response: %v", censusID.String(), writeErr)
+				return
+			}
+			// Flush the response writer if it supports flushing
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		// Handle read errors
+		if readErr != nil {
+			if readErr != io.EOF {
+				log.Errorf("error reading census dump with id '%s': %v", censusID.String(), readErr)
+			}
+			return
+		}
+	}
+}
+
 // handleDeleteCensus handles DELETE /censuses/{censusId}
 func (s *Server) handleDeleteCensus(w http.ResponseWriter, r *http.Request) {
 	censusIDStr := chi.URLParam(r, "censusId")
@@ -791,6 +894,7 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 		ParticipantCount: participantCount,
 		CreatedAt:        createdAt.Format(time.RFC3339),
 		PublishedAt:      publishedAt.Format(time.RFC3339),
+		CensusURI:        censusURIByID(censusID),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -874,6 +978,11 @@ func bigIntToBytes(length int, value *big.Int) []byte {
 	}
 
 	return result
+}
+
+// censusURIByID constructs the census URI given a census UUID
+func censusURIByID(censusID uuid.UUID) string {
+	return fmt.Sprintf("/censuses/%s/dump", censusID.String())
 }
 
 // corsMiddleware adds CORS headers to responses
