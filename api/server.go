@@ -152,15 +152,14 @@ func (s *Server) setupRouter() {
 	r.Post("/censuses/{censusId}/participants", s.handleAddParticipants)
 	r.Get("/censuses/{censusId}/participants", s.handleGetParticipants)
 	r.Get("/censuses/{censusId}/root", s.handleGetRoot)
-	r.Get("/censuses/{censusId}/dump", s.handleGetDump)
 	r.Post("/censuses/{censusId}/publish", s.handlePublishCensus)
 	r.Delete("/censuses/{censusId}", s.handleDeleteCensus)
 
 	// Census query endpoints (support both UUID and root)
 	r.Get("/censuses/{censusId}/size", s.handleCensusSize)
-	r.Get("/censuses/{censusId}/uri", s.handleCensusURI)
 	r.Get("/censuses/{censusRoot}/proof", s.handleCensusProof)
 	r.Get("/censuses/{censusRoot}/participants", s.handleCensusParticipants)
+	r.Get("/censuses/{censusRoot}/dump", s.handleGetDump)
 
 	// Metadata endpoints
 	r.Get("/metadata/farcaster/{censusRoot}", s.handleFarcasterMetadata)
@@ -389,7 +388,7 @@ func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
 		// Try to parse as root hex (for published censuses)
 		root, hexErr := hex.DecodeString(strings.TrimPrefix(censusParam, "0x"))
 		if hexErr != nil {
-			ErrInvalidCensusID.WithErr(hexErr).Write(w)
+			ErrInvalidCensusRoot.WithErr(hexErr).Write(w)
 			return
 		}
 		size, err = s.censusDB.SizeByRoot(root)
@@ -412,46 +411,6 @@ func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCensusSize handles GET /censuses/{censusId}/size (supports both UUID and root)
-func (s *Server) handleCensusURI(w http.ResponseWriter, r *http.Request) {
-	censusParam := chi.URLParam(r, "censusId")
-
-	// Try to parse as UUID first (for working censuses)
-	var err error
-	var censusID uuid.UUID
-	if censusID, err = uuid.Parse(censusParam); err == nil {
-		// Load working census and get size
-		if _, loadErr := s.censusDB.Load(censusID); loadErr != nil {
-			ErrCensusNotFound.WithErr(loadErr).Write(w)
-			return
-		}
-	} else {
-		// Try to parse as root hex (for published censuses)
-		root, hexErr := hex.DecodeString(strings.TrimPrefix(censusParam, "0x"))
-		if hexErr != nil {
-			ErrInvalidCensusID.WithErr(hexErr).Write(w)
-			return
-		}
-		ref, loadErr := s.censusDB.LoadByRoot(root)
-		if loadErr != nil {
-			ErrCensusNotFound.WithErr(loadErr).Write(w)
-			return
-		}
-		censusID = ref.ID
-	}
-
-	// Return response
-	w.Header().Set("Content-Type", "application/json")
-	response := CensusURIResponse{
-		URI: censusURIByID(censusID),
-	}
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		ErrMarshalingServerJSONFailed.WithErr(err).Write(w)
-		return
-	}
-}
-
 // handleCensusProof handles GET /censuses/{censusRoot}/proof?key={hexKey}
 func (s *Server) handleCensusProof(w http.ResponseWriter, r *http.Request) {
 	rootHex := chi.URLParam(r, "censusRoot")
@@ -459,7 +418,7 @@ func (s *Server) handleCensusProof(w http.ResponseWriter, r *http.Request) {
 	// Parse the root from hex
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
@@ -498,13 +457,13 @@ func (s *Server) handleCensusParticipants(w http.ResponseWriter, r *http.Request
 	// Parse the root from hex - validate format first
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
 	// Check if the root length is reasonable (should be a hash)
 	if len(root) < 16 { // Minimum reasonable hash length
-		ErrInvalidCensusID.With("census root too short").Write(w)
+		ErrInvalidCensusRoot.With("census root too short").Write(w)
 		return
 	}
 
@@ -750,20 +709,26 @@ func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGetDump handles GET /censuses/{censusId}/dump to stream census dump
+// handleGetDump handles GET /censuses/{censusRoot}/dump to stream census dump
 // as a JSONL response
 func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
 	// Stream census dump as JSON Lines
 	w.Header().Set("Content-Type", "application/x-ndjson")
 
-	// Parse census ID
-	censusID, err := uuid.Parse(chi.URLParam(r, "censusId"))
-	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+	// Parse census root
+	censusRootHex := chi.URLParam(r, "censusRoot")
+	if censusRootHex == "" {
+		ErrInvalidCensusRoot.With("missing censusRoot parameter").Write(w)
 		return
 	}
+	bCensusRoot, err := hex.DecodeString(strings.TrimPrefix(censusRootHex, "0x"))
+	if err != nil {
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
+		return
+	}
+	censusRoot := types.HexBytes(bCensusRoot)
 	// Load the census
-	ref, err := s.censusDB.Load(censusID)
+	ref, err := s.censusDB.LoadByRoot(censusRoot)
 	if err != nil {
 		ErrGenericInternalServerError.WithErr(err).Write(w)
 		return
@@ -773,7 +738,7 @@ func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
 	if closer, ok := dumpReader.(io.Closer); ok {
 		defer func() {
 			if err := closer.Close(); err != nil {
-				log.Warnw("error closing dump reader", "err", err, "censusId", censusID.String())
+				log.Warnw("error closing dump reader", "err", err, "root", censusRoot.String())
 			}
 		}()
 	}
@@ -783,7 +748,7 @@ func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
 		// Check if the request context is done (client disconnected)
 		select {
 		case <-r.Context().Done():
-			log.Infow("request cancelled by client", "censusID", censusID.String())
+			log.Infow("request cancelled by client", "root", censusRoot.String())
 			return
 		default:
 		}
@@ -791,7 +756,7 @@ func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
 		nRead, readErr := dumpReader.Read(buf)
 		if nRead > 0 {
 			if _, writeErr := w.Write(buf[:nRead]); writeErr != nil {
-				log.Errorf("error writing census dump with id '%s' to response: %v", censusID.String(), writeErr)
+				log.Errorf("error writing census dump with root '%s' to response: %v", censusRoot.String(), writeErr)
 				return
 			}
 			// Flush the response writer if it supports flushing
@@ -802,7 +767,7 @@ func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
 		// Handle read errors
 		if readErr != nil {
 			if readErr != io.EOF {
-				log.Errorf("error reading census dump with id '%s': %v", censusID.String(), readErr)
+				log.Errorf("error reading census dump with root '%s': %v", censusRoot.String(), readErr)
 			}
 			return
 		}
@@ -894,7 +859,7 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 		ParticipantCount: participantCount,
 		CreatedAt:        createdAt.Format(time.RFC3339),
 		PublishedAt:      publishedAt.Format(time.RFC3339),
-		CensusURI:        censusURIByID(censusID),
+		CensusURI:        censusURIByRoot(root),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -927,7 +892,7 @@ func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request)
 	// Parse the root from hex
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
@@ -980,9 +945,9 @@ func bigIntToBytes(length int, value *big.Int) []byte {
 	return result
 }
 
-// censusURIByID constructs the census URI given a census UUID
-func censusURIByID(censusID uuid.UUID) string {
-	return fmt.Sprintf("/censuses/%s/dump", censusID.String())
+// censusURIByRoot constructs the census URI given a census root
+func censusURIByRoot(censusRoot types.HexBytes) string {
+	return fmt.Sprintf("/censuses/%s/dump", censusRoot.String())
 }
 
 // corsMiddleware adds CORS headers to responses
