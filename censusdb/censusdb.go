@@ -760,16 +760,16 @@ func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
 func (c *CensusDB) Import(root *big.Int, reader io.Reader) (*CensusRef, error) {
 	// Create a new census tree by its root
 	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root.Bytes())
-	tree, err := census.NewCensusIMTWithPebble(
-		censusPrefix(censusID),
-		censusHasher,
-	)
+	tree, err := census.NewCensusIMT(c.db, censusHasher)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create census tree: %w", err)
 	}
 	// Import the dump into the tree
 	if err := tree.Import(root, reader); err != nil {
 		return nil, fmt.Errorf("failed to import census dump into tree: %w", err)
+	}
+	if err := tree.Sync(); err != nil {
+		return nil, fmt.Errorf("failed to sync census tree after import: %w", err)
 	}
 	// Create a new CensusRef with the imported tree
 	return c.newCensus(censusID, censusDBRootPrefix, root.Bytes(), tree)

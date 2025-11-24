@@ -31,3 +31,70 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 	Code  int    `json:"code"`
 }
+
+// CensusParticipant represents a participant in the census API response
+type CensusParticipant struct {
+	Key    types.HexBytes `json:"key"`
+	Weight *types.BigInt  `json:"weight,omitempty"`
+}
+
+// CensusParticipantsRequest represents the request to add participants to a census
+type CensusParticipantsRequest struct {
+	Participants []CensusParticipant `json:"participants"`
+}
+
+// CensusParticipantsResponse represents the paginated participants response
+type CensusParticipantsResponse struct {
+	Participants []CensusParticipant `json:"participants"`
+	Total        int                 `json:"total"`
+	Page         int                 `json:"page"`
+	PageSize     int                 `json:"pageSize"`
+	HasNext      bool                `json:"hasNext"`
+	HasPrev      bool                `json:"hasPrev"`
+}
+
+// NewCensusResponse represents the response when creating a new census
+type NewCensusResponse struct {
+	Census string `json:"census"` // UUID string
+}
+
+// PublishCensusResponse represents the response when publishing a census
+type PublishCensusResponse struct {
+	Root             types.HexBytes `json:"root"`
+	ParticipantCount int            `json:"participantCount"`
+	CreatedAt        string         `json:"createdAt"`
+	PublishedAt      string         `json:"publishedAt"`
+	CensusURI        string         `json:"censusUri,omitempty"`
+	Size             int            `json:"size"`
+}
+
+// SnapshotResponse represents the API response for snapshots
+type SnapshotResponse struct {
+	SnapshotDate     string            `json:"snapshotDate"`
+	CensusRoot       string            `json:"censusRoot"`
+	ParticipantCount int               `json:"participantCount"`
+	MinBalance       float64           `json:"minBalance"`
+	QueryName        string            `json:"queryName"`
+	CreatedAt        string            `json:"createdAt"`
+	DisplayName      string            `json:"displayName"`
+	DisplayAvatar    string            `json:"displayAvatar"`
+	WeightStrategy   string            `json:"weightStrategy"`
+	Metadata         map[string]string `json:"metadata,omitempty"` // Map of metadata type to API path
+}
+
+// SnapshotsListResponse represents the full response for the snapshots endpoint
+type SnapshotsListResponse struct {
+	Snapshots []SnapshotResponse `json:"snapshots"`
+	Total     int                `json:"total"`
+	Page      int                `json:"page"`
+	PageSize  int                `json:"pageSize"`
+	HasNext   bool               `json:"hasNext"`
+	HasPrev   bool               `json:"hasPrev"`
+}
+
+// PaginationParams holds pagination parameters
+type PaginationParams struct {
+	Page     int
+	PageSize int
+	Offset   int
+}
