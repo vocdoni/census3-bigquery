@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -85,7 +86,8 @@ type Config struct {
 	LogLevel string `mapstructure:"log-level"`
 
 	// Query configurations
-	Queries []QueryConfig `mapstructure:"queries"`
+	Queries   []QueryConfig `mapstructure:"queries"`
+	LocalOnly bool          `mapstructure:"local-only"`
 
 	// Census configuration
 	BatchSize     int `mapstructure:"batch-size"`
@@ -111,6 +113,7 @@ func Load() (*Config, error) {
 	pflag.Int("batch-size", 10000, "Batch size for census creation")
 	pflag.Int("max-census-size", 1000000, "Maximum number of participants per census")
 	pflag.String("queries-file", "./queries.yaml", "Path to queries configuration file")
+	pflag.Bool("local-only", false, "Run in local-only mode without external data sources")
 	pflag.String("alchemy-api-key", "", "Alchemy API key for Web3 queries (required if using Alchemy queries)")
 
 	pflag.Parse()
@@ -123,10 +126,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("batch-size", 10000)
 	viper.SetDefault("max-census-size", 1000000)
 	viper.SetDefault("queries-file", "./queries.yaml")
+	viper.SetDefault("local-only", false)
 	viper.SetDefault("alchemy-api-key", "")
 
 	// Bind flags to viper
-	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file", "alchemy-api-key"} {
+	for _, flag := range []string{"api-port", "data-dir", "project", "log-level", "batch-size", "max-census-size", "queries-file", "local-only", "alchemy-api-key"} {
 		if err := viper.BindPFlag(flag, pflag.CommandLine.Lookup(flag)); err != nil {
 			return nil, fmt.Errorf("failed to bind flag %s: %w", flag, err)
 		}
@@ -144,6 +148,7 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("batch-size", "CENSUS3_BATCH_SIZE")
 	_ = viper.BindEnv("max-census-size", "CENSUS3_MAX_CENSUS_SIZE")
 	_ = viper.BindEnv("queries-file", "CENSUS3_QUERIES_FILE")
+	_ = viper.BindEnv("local-only", "CENSUS3_LOCAL_ONLY")
 	_ = viper.BindEnv("alchemy-api-key", "ALCHEMY_API_KEY")
 
 	var cfg Config
@@ -151,7 +156,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Load queries from YAML file
+	if cfg.LocalOnly {
+		log.Println("Running in local-only mode; skipping query loading and validation")
+		return &cfg, nil
+	}
+
+	// Load queries from YAML file if queries are enabled
 	if err := cfg.loadQueries(); err != nil {
 		return nil, fmt.Errorf("failed to load queries: %w", err)
 	}

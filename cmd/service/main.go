@@ -17,15 +17,19 @@ func main() {
 
 	// Load configuration (this will parse all flags)
 	cfg, err := config.Load()
-
-	// Check for list-queries flag after parsing
-	if listQueries, _ := pflag.CommandLine.GetBool("list-queries"); listQueries {
-		bigquery.PrintAvailableQueries()
-		os.Exit(0)
-	}
-
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	// If not in local-only mode, check for list-queries flag
+	if !cfg.LocalOnly {
+		// Check for list-queries flag after parsing
+		if listQueries, _ := pflag.CommandLine.GetBool("list-queries"); listQueries {
+			bigquery.PrintAvailableQueries()
+			os.Exit(0)
+		}
+		if err != nil {
+			log.Fatalf("Failed to load configuration: %v", err)
+		}
 	}
 
 	// Initialize log with the configured level

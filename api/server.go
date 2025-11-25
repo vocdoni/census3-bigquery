@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -40,71 +41,6 @@ type Server struct {
 	port          int
 	maxCensusSize int
 	router        chi.Router
-}
-
-// CensusParticipant represents a participant in the census API response
-type CensusParticipant struct {
-	Key    types.HexBytes `json:"key"`
-	Weight *types.BigInt  `json:"weight,omitempty"`
-}
-
-// CensusParticipantsRequest represents the request to add participants to a census
-type CensusParticipantsRequest struct {
-	Participants []CensusParticipant `json:"participants"`
-}
-
-// CensusParticipantsResponse represents the paginated participants response
-type CensusParticipantsResponse struct {
-	Participants []CensusParticipant `json:"participants"`
-	Total        int                 `json:"total"`
-	Page         int                 `json:"page"`
-	PageSize     int                 `json:"pageSize"`
-	HasNext      bool                `json:"hasNext"`
-	HasPrev      bool                `json:"hasPrev"`
-}
-
-// NewCensusResponse represents the response when creating a new census
-type NewCensusResponse struct {
-	Census string `json:"census"` // UUID string
-}
-
-// PublishCensusResponse represents the response when publishing a census
-type PublishCensusResponse struct {
-	Root             types.HexBytes `json:"root"`
-	ParticipantCount int            `json:"participantCount"`
-	CreatedAt        string         `json:"createdAt"`
-	PublishedAt      string         `json:"publishedAt"`
-}
-
-// SnapshotResponse represents the API response for snapshots
-type SnapshotResponse struct {
-	SnapshotDate     string            `json:"snapshotDate"`
-	CensusRoot       string            `json:"censusRoot"`
-	ParticipantCount int               `json:"participantCount"`
-	MinBalance       float64           `json:"minBalance"`
-	QueryName        string            `json:"queryName"`
-	CreatedAt        string            `json:"createdAt"`
-	DisplayName      string            `json:"displayName"`
-	DisplayAvatar    string            `json:"displayAvatar"`
-	WeightStrategy   string            `json:"weightStrategy"`
-	Metadata         map[string]string `json:"metadata,omitempty"` // Map of metadata type to API path
-}
-
-// SnapshotsListResponse represents the full response for the snapshots endpoint
-type SnapshotsListResponse struct {
-	Snapshots []SnapshotResponse `json:"snapshots"`
-	Total     int                `json:"total"`
-	Page      int                `json:"page"`
-	PageSize  int                `json:"pageSize"`
-	HasNext   bool               `json:"hasNext"`
-	HasPrev   bool               `json:"hasPrev"`
-}
-
-// PaginationParams holds pagination parameters
-type PaginationParams struct {
-	Page     int
-	PageSize int
-	Offset   int
 }
 
 // Default pagination values
@@ -157,6 +93,7 @@ func (s *Server) setupRouter() {
 	r.Get("/censuses/{censusId}/size", s.handleCensusSize)
 	r.Get("/censuses/{censusRoot}/proof", s.handleCensusProof)
 	r.Get("/censuses/{censusRoot}/participants", s.handleCensusParticipants)
+	r.Get("/censuses/{censusRoot}/dump", s.handleGetDump)
 
 	// Metadata endpoints
 	r.Get("/metadata/farcaster/{censusRoot}", s.handleFarcasterMetadata)
@@ -385,7 +322,7 @@ func (s *Server) handleCensusSize(w http.ResponseWriter, r *http.Request) {
 		// Try to parse as root hex (for published censuses)
 		root, hexErr := hex.DecodeString(strings.TrimPrefix(censusParam, "0x"))
 		if hexErr != nil {
-			ErrInvalidCensusID.WithErr(hexErr).Write(w)
+			ErrInvalidCensusRoot.WithErr(hexErr).Write(w)
 			return
 		}
 		size, err = s.censusDB.SizeByRoot(root)
@@ -415,7 +352,7 @@ func (s *Server) handleCensusProof(w http.ResponseWriter, r *http.Request) {
 	// Parse the root from hex
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
@@ -454,13 +391,13 @@ func (s *Server) handleCensusParticipants(w http.ResponseWriter, r *http.Request
 	// Parse the root from hex - validate format first
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
 	// Check if the root length is reasonable (should be a hash)
 	if len(root) < 16 { // Minimum reasonable hash length
-		ErrInvalidCensusID.With("census root too short").Write(w)
+		ErrInvalidCensusRoot.With("census root too short").Write(w)
 		return
 	}
 
@@ -706,6 +643,71 @@ func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleGetDump handles GET /censuses/{censusRoot}/dump to stream census dump
+// as a JSONL response
+func (s *Server) handleGetDump(w http.ResponseWriter, r *http.Request) {
+	// Stream census dump as JSON Lines
+	w.Header().Set("Content-Type", "application/x-ndjson")
+
+	// Parse census root
+	censusRootHex := chi.URLParam(r, "censusRoot")
+	if censusRootHex == "" {
+		ErrInvalidCensusRoot.With("missing censusRoot parameter").Write(w)
+		return
+	}
+	bCensusRoot, err := hex.DecodeString(strings.TrimPrefix(censusRootHex, "0x"))
+	if err != nil {
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
+		return
+	}
+	censusRoot := types.HexBytes(bCensusRoot)
+	// Load the census
+	ref, err := s.censusDB.LoadByRoot(censusRoot)
+	if err != nil {
+		ErrGenericInternalServerError.WithErr(err).Write(w)
+		return
+	}
+	// Get the dump reader to stream the census dump
+	dumpReader := ref.Tree().Dump()
+	if closer, ok := dumpReader.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				log.Warnw("error closing dump reader", "err", err, "root", censusRoot.String())
+			}
+		}()
+	}
+	// Crate a single buffer to reuse
+	buf := make([]byte, 32*1024) // 32KB
+	for {
+		// Check if the request context is done (client disconnected)
+		select {
+		case <-r.Context().Done():
+			log.Infow("request cancelled by client", "root", censusRoot.String())
+			return
+		default:
+		}
+		// Read from dump and write to response
+		nRead, readErr := dumpReader.Read(buf)
+		if nRead > 0 {
+			if _, writeErr := w.Write(buf[:nRead]); writeErr != nil {
+				log.Errorf("error writing census dump with root '%s' to response: %v", censusRoot.String(), writeErr)
+				return
+			}
+			// Flush the response writer if it supports flushing
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		// Handle read errors
+		if readErr != nil {
+			if readErr != io.EOF {
+				log.Errorf("error reading census dump with root '%s': %v", censusRoot.String(), readErr)
+			}
+			return
+		}
+	}
+}
+
 // handleDeleteCensus handles DELETE /censuses/{censusId}
 func (s *Server) handleDeleteCensus(w http.ResponseWriter, r *http.Request) {
 	censusIDStr := chi.URLParam(r, "censusId")
@@ -791,6 +793,8 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 		ParticipantCount: participantCount,
 		CreatedAt:        createdAt.Format(time.RFC3339),
 		PublishedAt:      publishedAt.Format(time.RFC3339),
+		CensusURI:        censusURIByRoot(root),
+		Size:             rootRef.Size(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -823,7 +827,7 @@ func (s *Server) handleFarcasterMetadata(w http.ResponseWriter, r *http.Request)
 	// Parse the root from hex
 	root, err := hex.DecodeString(strings.TrimPrefix(rootHex, "0x"))
 	if err != nil {
-		ErrInvalidCensusID.WithErr(err).Write(w)
+		ErrInvalidCensusRoot.WithErr(err).Write(w)
 		return
 	}
 
@@ -874,6 +878,11 @@ func bigIntToBytes(length int, value *big.Int) []byte {
 	}
 
 	return result
+}
+
+// censusURIByRoot constructs the census URI given a census root
+func censusURIByRoot(censusRoot types.HexBytes) string {
+	return fmt.Sprintf("/censuses/%s/dump", censusRoot.String())
 }
 
 // corsMiddleware adds CORS headers to responses
