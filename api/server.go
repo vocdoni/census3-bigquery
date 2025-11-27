@@ -205,15 +205,15 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	responseSnapshots := make([]SnapshotResponse, len(paginatedSnapshots))
 	for i, snapshot := range paginatedSnapshots {
 		response := SnapshotResponse{
-			SnapshotDate:     snapshot.SnapshotDate.Format(time.RFC3339),
-			CreatedAt:        time.Now().Format(time.RFC3339),
-			CensusRoot:       snapshot.CensusRoot.String(),
-			ParticipantCount: snapshot.ParticipantCount,
-			MinBalance:       snapshot.MinBalance,
-			QueryName:        snapshot.QueryName,
-			DisplayName:      snapshot.DisplayName,
-			DisplayAvatar:    snapshot.DisplayAvatar,
-			WeightStrategy:   mapWeightStrategy(snapshot.WeightConfig),
+			SnapshotDate:   snapshot.SnapshotDate.Format(time.RFC3339),
+			CreatedAt:      time.Now().Format(time.RFC3339),
+			CensusRoot:     snapshot.CensusRoot.String(),
+			Size:           snapshot.ParticipantCount,
+			MinBalance:     snapshot.MinBalance,
+			QueryName:      snapshot.QueryName,
+			DisplayName:    snapshot.DisplayName,
+			DisplayAvatar:  snapshot.DisplayAvatar,
+			WeightStrategy: mapWeightStrategy(snapshot.WeightConfig),
 		}
 
 		// Check for available metadata and add links
@@ -266,15 +266,15 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	// Convert to response format
 	response := SnapshotResponse{
-		SnapshotDate:     latest.SnapshotDate.Format(time.RFC3339),
-		CreatedAt:        time.Now().Format(time.RFC3339),
-		CensusRoot:       latest.CensusRoot.String(),
-		ParticipantCount: latest.ParticipantCount,
-		MinBalance:       latest.MinBalance,
-		QueryName:        latest.QueryName,
-		DisplayName:      latest.DisplayName,
-		DisplayAvatar:    latest.DisplayAvatar,
-		WeightStrategy:   mapWeightStrategy(latest.WeightConfig),
+		SnapshotDate:   latest.SnapshotDate.Format(time.RFC3339),
+		CreatedAt:      time.Now().Format(time.RFC3339),
+		CensusRoot:     latest.CensusRoot.String(),
+		Size:           latest.ParticipantCount,
+		MinBalance:     latest.MinBalance,
+		QueryName:      latest.QueryName,
+		DisplayName:    latest.DisplayName,
+		DisplayAvatar:  latest.DisplayAvatar,
+		WeightStrategy: mapWeightStrategy(latest.WeightConfig),
 	}
 
 	// Set content type and encode response
@@ -748,7 +748,7 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 
 	// Get current root and participant count
 	root := workingRef.Root()
-	participantCount := workingRef.Size()
+	size := workingRef.Size()
 	createdAt := workingRef.LastUsed // Use LastUsed as creation time
 	publishedAt := time.Now()
 
@@ -789,12 +789,11 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 
 	// Return response
 	response := PublishCensusResponse{
-		Root:             types.HexBytes(root),
-		ParticipantCount: participantCount,
-		CreatedAt:        createdAt.Format(time.RFC3339),
-		PublishedAt:      publishedAt.Format(time.RFC3339),
-		CensusURI:        censusURIByRoot(root),
-		Size:             rootRef.Size(),
+		Root:          types.HexBytes(root),
+		CreatedAt:     createdAt.Format(time.RFC3339),
+		PublishedAt:   publishedAt.Format(time.RFC3339),
+		CensusURIPath: censusURIByRoot(root),
+		Size:          size,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -156,7 +156,7 @@ func TestAPIServerSnapshots(t *testing.T) {
 	snapshot := response.Snapshots[0]
 	c.Assert(snapshot.SnapshotDate, quicktest.Not(quicktest.Equals), "")
 	c.Assert(snapshot.CensusRoot, quicktest.Not(quicktest.Equals), "")
-	c.Assert(snapshot.ParticipantCount, quicktest.Equals, 100)
+	c.Assert(snapshot.Size, quicktest.Equals, 100)
 	c.Assert(snapshot.MinBalance, quicktest.Equals, 0.25)
 	c.Assert(snapshot.QueryName, quicktest.Equals, "ethereum_balances")
 	c.Assert(snapshot.CreatedAt, quicktest.Not(quicktest.Equals), "")
@@ -271,7 +271,7 @@ func TestAPIServerLatestSnapshot(t *testing.T) {
 	c.Assert(err, quicktest.IsNil)
 
 	// Should return the first snapshot (most recent)
-	c.Assert(response.ParticipantCount, quicktest.Equals, 100)
+	c.Assert(response.Size, quicktest.Equals, 100)
 	c.Assert(response.MinBalance, quicktest.Equals, 0.25)
 	c.Assert(response.QueryName, quicktest.Equals, "ethereum_balances")
 }
@@ -642,7 +642,7 @@ func TestAPIServerCensusParticipantsInvalidRoot(t *testing.T) {
 	err := json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response.Code, quicktest.Equals, 40010) // ErrInvalidCensusID
+	c.Assert(response.Code, quicktest.Equals, ErrInvalidCensusRoot.Code) // ErrInvalidCensusRoot
 }
 
 func TestAPIServerCensusParticipantsNotFound(t *testing.T) {

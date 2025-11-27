@@ -60,26 +60,25 @@ type NewCensusResponse struct {
 
 // PublishCensusResponse represents the response when publishing a census
 type PublishCensusResponse struct {
-	Root             types.HexBytes `json:"root"`
-	ParticipantCount int            `json:"participantCount"`
-	CreatedAt        string         `json:"createdAt"`
-	PublishedAt      string         `json:"publishedAt"`
-	CensusURI        string         `json:"censusUri,omitempty"`
-	Size             int            `json:"size"`
+	Root          types.HexBytes `json:"root"`
+	CreatedAt     string         `json:"createdAt"`
+	PublishedAt   string         `json:"publishedAt"`
+	CensusURIPath string         `json:"censusUriPath,omitempty"`
+	Size          int            `json:"size"`
 }
 
 // SnapshotResponse represents the API response for snapshots
 type SnapshotResponse struct {
-	SnapshotDate     string            `json:"snapshotDate"`
-	CensusRoot       string            `json:"censusRoot"`
-	ParticipantCount int               `json:"participantCount"`
-	MinBalance       float64           `json:"minBalance"`
-	QueryName        string            `json:"queryName"`
-	CreatedAt        string            `json:"createdAt"`
-	DisplayName      string            `json:"displayName"`
-	DisplayAvatar    string            `json:"displayAvatar"`
-	WeightStrategy   string            `json:"weightStrategy"`
-	Metadata         map[string]string `json:"metadata,omitempty"` // Map of metadata type to API path
+	SnapshotDate   string            `json:"snapshotDate"`
+	CensusRoot     string            `json:"censusRoot"`
+	Size           int               `json:"size"`
+	MinBalance     float64           `json:"minBalance"`
+	QueryName      string            `json:"queryName"`
+	CreatedAt      string            `json:"createdAt"`
+	DisplayName    string            `json:"displayName"`
+	DisplayAvatar  string            `json:"displayAvatar"`
+	WeightStrategy string            `json:"weightStrategy"`
+	Metadata       map[string]string `json:"metadata,omitempty"` // Map of metadata type to API path
 }
 
 // SnapshotsListResponse represents the full response for the snapshots endpoint
