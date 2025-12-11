@@ -153,6 +153,14 @@ func (s *Service) Stop() {
 	log.Infow("stopping service")
 
 	s.cancel()
+
+	// Stop API server with timeout to avoid hanging shutdowns.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := s.apiServer.Stop(shutdownCtx); err != nil {
+		log.Warnw("failed to stop API server", "error", err)
+	}
+
 	s.wg.Wait()
 
 	closeClients(s.bigqueryClient, s.alchemyClient)

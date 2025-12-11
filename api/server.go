@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -41,6 +43,7 @@ type Server struct {
 	port          int
 	maxCensusSize int
 	router        chi.Router
+	httpServer    *http.Server
 }
 
 // Default pagination values
@@ -113,8 +116,32 @@ func (s *Server) Start() error {
 		log.Infow("API server ready to accept requests", "address", addr)
 	}()
 
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
+
 	log.Infow("starting HTTP server...", "address", addr)
-	return http.ListenAndServe(addr, s.router)
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	log.Infow("HTTP server stopped", "address", addr)
+	return nil
+}
+
+// Stop gracefully shuts down the HTTP server.
+func (s *Server) Stop(ctx context.Context) error {
+	if s.httpServer == nil {
+		return nil
+	}
+
+	log.Infow("stopping HTTP server", "address", s.httpServer.Addr)
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown HTTP server: %w", err)
+	}
+
+	return nil
 }
 
 // parsePaginationParams extracts pagination parameters from query string
