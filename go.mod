@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
-	github.com/vocdoni/davinci-node v0.0.0-20251126132825-532c2e7dabb2
+	github.com/vocdoni/davinci-node v0.0.0-20251217072043-20cb68def22d
 	github.com/vocdoni/lean-imt-go v0.0.0-20251127115127-d947440cf352
 	google.golang.org/api v0.255.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -35,8 +35,8 @@ require (
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
-	github.com/consensys/gnark v0.14.1-0.20251111105516-b53af634876c // indirect
-	github.com/consensys/gnark-crypto v0.19.2 // indirect
+	github.com/consensys/gnark v0.14.1-0.20251208223249-9af46fd442f3 // indirect
+	github.com/consensys/gnark-crypto v0.19.3-0.20251208215708-a16777bf2020 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

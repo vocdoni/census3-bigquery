@@ -234,7 +234,7 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 		response := SnapshotResponse{
 			SnapshotDate:     snapshot.SnapshotDate.Format(time.RFC3339),
 			CreatedAt:        time.Now().Format(time.RFC3339),
-			CensusRoot:       snapshot.CensusRoot.String(),
+			CensusRoot:       snapshot.CensusRoot.Hex32Bytes(),
 			ParticipantCount: snapshot.ParticipantCount,
 			MinBalance:       snapshot.MinBalance,
 			QueryName:        snapshot.QueryName,
@@ -295,7 +295,7 @@ func (s *Server) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
 	response := SnapshotResponse{
 		SnapshotDate:     latest.SnapshotDate.Format(time.RFC3339),
 		CreatedAt:        time.Now().Format(time.RFC3339),
-		CensusRoot:       latest.CensusRoot.String(),
+		CensusRoot:       latest.CensusRoot.Hex32Bytes(),
 		ParticipantCount: latest.ParticipantCount,
 		MinBalance:       latest.MinBalance,
 		QueryName:        latest.QueryName,
@@ -660,7 +660,7 @@ func (s *Server) handleGetRoot(w http.ResponseWriter, r *http.Request) {
 	// Get root
 	root := ref.Root()
 	response := CensusRootResponse{
-		Root: types.HexBytes(root),
+		Root: types.HexBytes(root).Hex32Bytes(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -816,7 +816,7 @@ func (s *Server) handlePublishCensus(w http.ResponseWriter, r *http.Request) {
 
 	// Return response
 	response := PublishCensusResponse{
-		Root:             types.HexBytes(root),
+		Root:             types.HexBytes(root).Hex32Bytes(),
 		ParticipantCount: participantCount,
 		CreatedAt:        createdAt.Format(time.RFC3339),
 		PublishedAt:      publishedAt.Format(time.RFC3339),

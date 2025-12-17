@@ -1,8 +1,6 @@
 package api
 
-import (
-	"github.com/vocdoni/davinci-node/types"
-)
+import "github.com/vocdoni/davinci-node/types"
 
 // HealthResponse represents the response for the health endpoint
 type HealthResponse struct {
@@ -71,7 +69,7 @@ type PublishCensusResponse struct {
 // SnapshotResponse represents the API response for snapshots
 type SnapshotResponse struct {
 	SnapshotDate     string            `json:"snapshotDate"`
-	CensusRoot       string            `json:"censusRoot"`
+	CensusRoot       types.HexBytes    `json:"censusRoot"`
 	ParticipantCount int               `json:"participantCount"`
 	MinBalance       float64           `json:"minBalance"`
 	QueryName        string            `json:"queryName"`
