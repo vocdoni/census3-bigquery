@@ -102,6 +102,12 @@ func NewCensusDB(db db.Database) *CensusDB {
 	return c
 }
 
+// EmptyTreeByRoot creates a new empty census tree identified by its root.
+func (c *CensusDB) EmptyTreeByRoot(root []byte) (*census.CensusIMT, error) {
+	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root)
+	return census.NewCensusIMTWithPebble(censusPrefix(censusID), censusHasher)
+}
+
 // New creates a new working census with a UUID identifier and adds it to the database.
 // It returns ErrCensusAlreadyExists if a census with the given UUID is already present.
 func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
