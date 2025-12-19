@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
-	github.com/vocdoni/davinci-node v0.0.0-20251217072043-20cb68def22d
+	github.com/vocdoni/davinci-node v0.0.0-20251218112031-4926bf2658bd
 	github.com/vocdoni/lean-imt-go v0.0.0-20251127115127-d947440cf352
 	google.golang.org/api v0.255.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -82,7 +82,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
-	github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
