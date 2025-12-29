@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
-	github.com/vocdoni/davinci-node v0.0.0-20251217204541-ccd69f1b083b
+	github.com/vocdoni/davinci-node v0.0.0-20251229133119-7d8624a5e4aa
 	github.com/vocdoni/lean-imt-go v0.0.0-20251218181551-68f949362bba
 	google.golang.org/api v0.255.0
 	gopkg.in/yaml.v3 v3.0.1

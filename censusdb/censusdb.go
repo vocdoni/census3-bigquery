@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 
@@ -103,9 +104,12 @@ func NewCensusDB(db db.Database) *CensusDB {
 }
 
 // EmptyTreeByRoot creates a new empty census tree identified by its root.
-func (c *CensusDB) EmptyTreeByRoot(root []byte) (*census.CensusIMT, error) {
-	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root)
-	return census.NewCensusIMTWithPebble(censusPrefix(censusID), censusHasher)
+func (c *CensusDB) EmptyTreeByRoot() (*census.CensusIMT, error) {
+	db, err := metadb.New(db.TypeInMem, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create in-memory DB: %w", err)
+	}
+	return census.NewCensusIMT(db, censusHasher)
 }
 
 // New creates a new working census with a UUID identifier and adds it to the database.
