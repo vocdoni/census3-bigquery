@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 
@@ -102,18 +103,34 @@ func NewCensusDB(db db.Database) *CensusDB {
 	return c
 }
 
+// EmptyTreeByRoot creates a new empty census tree with in-memory database
+// associated.
+func (c *CensusDB) EmptyTreeByRoot() (*census.CensusIMT, error) {
+	memDB, err := metadb.New(db.TypeInMem, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create in-memory DB: %w", err)
+	}
+	return census.NewCensusIMT(memDB, censusHasher)
+}
+
 // New creates a new working census with a UUID identifier and adds it to the database.
 // It returns ErrCensusAlreadyExists if a census with the given UUID is already present.
 func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
 	return c.newCensus(censusID, censusDBWorkingOnQueries, censusID[:], nil)
 }
 
-// NewByRoot creates a new census identified by its root.
-// It returns ErrCensusAlreadyExists if a census with the given root is already present.
-func (c *CensusDB) NewByRoot(root types.HexBytes) (*CensusRef, error) {
+// NewByTree creates a new census identified by its root and with the provided
+// tree.
+func (c *CensusDB) NewByTree(root []byte, tree *census.CensusIMT) (*CensusRef, error) {
 	// Generate a deterministic UUID from the root for internal use
 	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root)
-	return c.newCensus(censusID, censusDBRootPrefix, root, nil)
+	return c.newCensus(censusID, censusDBRootPrefix, root, tree)
+}
+
+// NewByRoot creates a new census identified by its root.
+// It returns ErrCensusAlreadyExists if a census with the given root is already present.
+func (c *CensusDB) NewByRoot(root []byte) (*CensusRef, error) {
+	return c.NewByTree(root, nil)
 }
 
 // newCensus is the internal method that creates a new census with the given parameters.
@@ -133,7 +150,7 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier ty
 	if _, err := c.db.Get(key); err == nil {
 		return nil, ErrCensusAlreadyExists
 	} else if !errors.Is(err, db.ErrKeyNotFound) {
-		return nil, err
+		return nil, fmt.Errorf("error getting db key '%s': %w", string(key), err)
 	}
 
 	// Prepare a new census reference.
@@ -151,7 +168,7 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier ty
 			censusPrefix(censusID),
 			censusHasher,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create census tree: %w", err)
 		}
 	}
 	ref.SetTree(tree)
@@ -165,7 +182,7 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier ty
 
 	// Store the reference in the database.
 	if err := c.writeReferenceWithPrefix(ref, prefix, keyIdentifier); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write census reference to db: %w", err)
 	}
 
 	// Add to the in‑memory maps.
