@@ -846,3 +846,24 @@ func (c *CensusDB) ImportAll(data []byte) (*CensusRef, error) {
 	// Create a new CensusRef with the imported tree
 	return c.newCensus(censusID, censusDBRootPrefix, dump.Root.Bytes(), tree)
 }
+
+// ImportEvents imports a census from a list of census events.
+func (c *CensusDB) ImportEvents(bigRoot *big.Int, events []census.CensusEvent) (*CensusRef, error) {
+	root := types.HexBytes(bigRoot.Bytes()).LeftTrim()
+
+	// Create a new census tree by its root
+	censusID := rootToCensusID(root)
+	tree, err := census.NewCensusIMT(
+		c.db,
+		censusHasher,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create census tree: %w", err)
+	}
+	// Import the events into the tree
+	if err := tree.ImportEvents(bigRoot, events); err != nil {
+		return nil, fmt.Errorf("failed to import census events into tree: %w", err)
+	}
+	// Create a new CensusRef with the imported tree
+	return c.newCensus(censusID, censusDBRootPrefix, root, tree)
+}
