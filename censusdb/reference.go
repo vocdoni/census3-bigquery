@@ -184,6 +184,14 @@ func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, uint64, bool,
 	return key, packedValue.Bytes(), siblings, proof.Index, true, nil
 }
 
+// ApplyEvents safely applies a list of census events to the Merkle tree.
+func (cr *CensusRef) ApplyEvents(bigRoot *big.Int, events []census.CensusEvent) error {
+	cr.treeMu.Lock()
+	defer cr.treeMu.Unlock()
+
+	return cr.tree.ApplyEvents(bigRoot, events)
+}
+
 // VerifyProof verifies a Merkle proof for the given leaf key.
 // Uses lean-imt verification with the configured hash function.
 func VerifyProof(key, value, root, siblings []byte, index uint64) bool {
