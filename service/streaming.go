@@ -46,8 +46,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 
 	// Process participants in batches
 	var totalProcessed int
-	var batch [][]byte
-	var values [][]byte
+	var batch []types.HexBytes
+	var values []types.HexBytes
 	startTime := time.Now()
 	lastLogTime := startTime
 	queryID := qr.config.Name
@@ -117,8 +117,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				}
 
 				// Reset batch
-				batch = [][]byte{}
-				values = [][]byte{}
+				batch = []types.HexBytes{}
+				values = []types.HexBytes{}
 			}
 
 		case err := <-errorCh:
@@ -179,8 +179,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 
 	// Process participants in batches
 	var totalProcessed int
-	var batch [][]byte
-	var values [][]byte
+	var batch []types.HexBytes
+	var values []types.HexBytes
 	startTime := time.Now()
 	lastLogTime := startTime
 	queryID := qr.config.Name
@@ -250,8 +250,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				}
 
 				// Reset batch
-				batch = [][]byte{}
-				values = [][]byte{}
+				batch = []types.HexBytes{}
+				values = []types.HexBytes{}
 			}
 
 		case err := <-errorCh:

@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 
@@ -57,13 +56,13 @@ var (
 // updateRootRequest is used to update the root of a census tree.
 type updateRootRequest struct {
 	censusID uuid.UUID
-	newRoot  []byte
+	newRoot  HexBytes
 	done     chan struct{}
 }
 
 // rootKey converts a root (a byte slice) to its canonical hexadecimal string.
-func rootKey(root []byte) string {
-	return hex.EncodeToString(root)
+func rootKey(root HexBytes) string {
+	return root.String()
 }
 
 // CensusDB is a safe and persistent database of census trees.
@@ -103,34 +102,18 @@ func NewCensusDB(db db.Database) *CensusDB {
 	return c
 }
 
-// EmptyTreeByRoot creates a new empty census tree with in-memory database
-// associated.
-func (c *CensusDB) EmptyTreeByRoot() (*census.CensusIMT, error) {
-	memDB, err := metadb.New(db.TypeInMem, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create in-memory DB: %w", err)
-	}
-	return census.NewCensusIMT(memDB, censusHasher)
-}
-
 // New creates a new working census with a UUID identifier and adds it to the database.
 // It returns ErrCensusAlreadyExists if a census with the given UUID is already present.
 func (c *CensusDB) New(censusID uuid.UUID) (*CensusRef, error) {
 	return c.newCensus(censusID, censusDBWorkingOnQueries, censusID[:], nil)
 }
 
-// NewByTree creates a new census identified by its root and with the provided
-// tree.
-func (c *CensusDB) NewByTree(root []byte, tree *census.CensusIMT) (*CensusRef, error) {
-	// Generate a deterministic UUID from the root for internal use
-	censusID := uuid.NewSHA1(uuid.NameSpaceOID, root)
-	return c.newCensus(censusID, censusDBRootPrefix, root, tree)
-}
-
 // NewByRoot creates a new census identified by its root.
 // It returns ErrCensusAlreadyExists if a census with the given root is already present.
-func (c *CensusDB) NewByRoot(root []byte) (*CensusRef, error) {
-	return c.NewByTree(root, nil)
+func (c *CensusDB) NewByRoot(root HexBytes) (*CensusRef, error) {
+	// Generate a deterministic UUID from the root for internal use
+	censusID := rootToCensusID(root)
+	return c.newCensus(censusID, censusDBRootPrefix, root, nil)
 }
 
 // newCensus is the internal method that creates a new census with the given parameters.
@@ -196,7 +179,7 @@ func (c *CensusDB) newCensus(censusID uuid.UUID, prefix string, keyIdentifier ty
 }
 
 // writeReferenceWithPrefix writes a census reference to the database with a specific prefix.
-func (c *CensusDB) writeReferenceWithPrefix(ref *CensusRef, prefix string, identifier []byte) error {
+func (c *CensusDB) writeReferenceWithPrefix(ref *CensusRef, prefix string, identifier HexBytes) error {
 	key := append([]byte(prefix), identifier...)
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(ref); err != nil {
@@ -212,7 +195,7 @@ func (c *CensusDB) writeReferenceWithPrefix(ref *CensusRef, prefix string, ident
 
 // TrunkKey computes the hash of a key and truncates it to the required length.
 // For leanimt census, we use the address directly (20 bytes for Ethereum addresses).
-func (c *CensusDB) TrunkKey(key []byte) []byte {
+func (c *CensusDB) TrunkKey(key HexBytes) HexBytes {
 	// For lean-imt census, keys are Ethereum addresses (20 bytes)
 	if len(key) < 20 {
 		// Pad with zeros (right-pad)
@@ -245,7 +228,7 @@ func (c *CensusDB) Exists(censusID uuid.UUID) bool {
 }
 
 // ExistsByRoot returns true if a census with the given root exists in the local database.
-func (c *CensusDB) ExistsByRoot(root types.HexBytes) bool {
+func (c *CensusDB) ExistsByRoot(root HexBytes) bool {
 	censusID := rootToCensusID(root)
 	c.mu.RLock()
 	_, exists := c.loadedCensus[censusID]
@@ -268,7 +251,7 @@ func (c *CensusDB) Load(censusID uuid.UUID) (*CensusRef, error) {
 }
 
 // LoadByRoot loads a census by its root from memory or from the persistent KV database.
-func (c *CensusDB) LoadByRoot(root types.HexBytes) (*CensusRef, error) {
+func (c *CensusDB) LoadByRoot(root HexBytes) (*CensusRef, error) {
 	return c.loadCensusRefByRoot(rootToCensusID(root), root.LeftTrim())
 }
 
@@ -330,7 +313,7 @@ func (c *CensusDB) loadCensusRef(censusID uuid.UUID) (*CensusRef, error) {
 }
 
 // loadCensusRefByRoot loads a census reference by root from memory or persistent DB.
-func (c *CensusDB) loadCensusRefByRoot(censusID uuid.UUID, root types.HexBytes) (*CensusRef, error) {
+func (c *CensusDB) loadCensusRefByRoot(censusID uuid.UUID, root HexBytes) (*CensusRef, error) {
 	c.mu.RLock()
 	if ref, exists := c.loadedCensus[censusID]; exists {
 		c.mu.RUnlock()
@@ -565,7 +548,7 @@ func (c *CensusDB) VerifyProof(proof *CensusProof) bool {
 		// For leanimt census, the value is the packed address+weight.
 		// Reconstruct: packed = (address << 88) | weight
 		addr := common.BytesToAddress(proof.Address)
-		packedValue := new(big.Int).Lsh(new(big.Int).SetBytes(addr.Bytes()), 88)
+		packedValue := new(big.Int).Lsh(addr.Big(), 88)
 		packedValue.Or(packedValue, proof.Weight.MathBigInt())
 		if packedValue.Cmp(new(big.Int).SetBytes(proof.Value)) != 0 {
 			return false
@@ -584,7 +567,7 @@ func (c *CensusDB) VerifyProof(proof *CensusProof) bool {
 }
 
 // ProofByRoot generates a Merkle proof for the given leafKey in a census identified by its root.
-func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
+func (c *CensusDB) ProofByRoot(root, leafKey HexBytes) (*CensusProof, error) {
 	// Load census by root directly
 	ref, err := c.LoadByRoot(root)
 	if err != nil {
@@ -620,7 +603,7 @@ func (c *CensusDB) ProofByRoot(root, leafKey []byte) (*CensusProof, error) {
 }
 
 // SizeByRoot returns the number of leaves in the Merkle tree with the given root.
-func (c *CensusDB) SizeByRoot(root []byte) (int, error) {
+func (c *CensusDB) SizeByRoot(root HexBytes) (int, error) {
 	// Load census by root directly
 	ref, err := c.LoadByRoot(root)
 	if err != nil {
@@ -710,7 +693,7 @@ func (c *CensusDB) PurgeWorkingCensuses(maxAge time.Duration) (int, error) {
 
 // updateRoot recalculates the Merkle tree root for a given census and updates the in‑memory index.
 // It acquires the CensusRef's treeMu before reading or writing currentRoot.
-func (c *CensusDB) updateRoot(censusID uuid.UUID, newRoot []byte) error {
+func (c *CensusDB) updateRoot(censusID uuid.UUID, newRoot HexBytes) error {
 	newKey := rootKey(newRoot)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -726,7 +709,7 @@ func (c *CensusDB) updateRoot(censusID uuid.UUID, newRoot []byte) error {
 		ref.treeMu.Unlock()
 		return nil
 	}
-	ref.currentRoot = append([]byte(nil), newRoot...)
+	ref.currentRoot = newRoot.Bytes()
 	ref.treeMu.Unlock()
 
 	delete(c.rootIndex, oldKey)
@@ -743,14 +726,14 @@ func censusPrefix(censusID uuid.UUID) string {
 // rootToCensusID generates a deterministic UUID from the given root. It uses
 // SHA-1 hashing and ensures the root is left-trimmed of leading zeros before
 // hashing.
-func rootToCensusID(root types.HexBytes) uuid.UUID {
+func rootToCensusID(root HexBytes) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, root.LeftTrim())
 }
 
 // censusDBRootPrefix generates the database key prefix for a census identified
 // by its root. It ensures the root is left-trimmed of leading zeros before
 // appending to the prefix.
-func rootDBPrefix(root types.HexBytes) []byte {
+func rootDBPrefix(root HexBytes) []byte {
 	return append([]byte(censusDBRootPrefix), root.LeftTrim()...)
 }
 
@@ -801,7 +784,7 @@ func BigIntSiblings(siblings []byte) ([]*big.Int, error) {
 // dump, and creates a new CensusRef with the imported tree. It returns the
 // CensusRef and any error encountered during the process, such as decoding
 // errors or tree creation/import errors.
-func (c *CensusDB) Import(root *big.Int, reader io.Reader) (*CensusRef, error) {
+func (c *CensusDB) Import(root HexBytes, reader io.Reader) (*CensusRef, error) {
 	// Create a new census tree by its root
 	censusID := rootToCensusID(root.Bytes())
 	tree, err := census.NewCensusIMT(c.db, censusHasher)
@@ -809,7 +792,7 @@ func (c *CensusDB) Import(root *big.Int, reader io.Reader) (*CensusRef, error) {
 		return nil, fmt.Errorf("failed to create census tree: %w", err)
 	}
 	// Import the dump into the tree
-	if err := tree.Import(root, reader); err != nil {
+	if err := tree.Import(root.BigInt().MathBigInt(), reader); err != nil {
 		return nil, fmt.Errorf("failed to import census dump into tree: %w", err)
 	}
 	if err := tree.Sync(); err != nil {
@@ -848,22 +831,12 @@ func (c *CensusDB) ImportAll(data []byte) (*CensusRef, error) {
 }
 
 // ImportEvents imports a census from a list of census events.
-func (c *CensusDB) ImportEvents(bigRoot *big.Int, events []census.CensusEvent) (*CensusRef, error) {
-	root := types.HexBytes(bigRoot.Bytes()).LeftTrim()
-
+func (c *CensusDB) ImportEvents(root HexBytes, events []census.CensusEvent) (*CensusRef, error) {
 	// Create a new census tree by its root
-	censusID := rootToCensusID(root)
-	tree, err := census.NewCensusIMT(
-		c.db,
-		censusHasher,
-	)
+	ref, err := c.NewByRoot(root)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create census tree: %w", err)
 	}
 	// Import the events into the tree
-	if err := tree.ImportEvents(bigRoot, events); err != nil {
-		return nil, fmt.Errorf("failed to import census events into tree: %w", err)
-	}
-	// Create a new CensusRef with the imported tree
-	return c.newCensus(censusID, censusDBRootPrefix, root, tree)
+	return ref, ref.ApplyEvents(root, events)
 }

@@ -40,7 +40,7 @@ func (cr *CensusRef) SetTree(tree *census.CensusIMT) {
 // Insert safely inserts a key/value pair into the Merkle tree.
 // It holds treeMu during the Add and Root calls.
 // Key must be exactly 20 bytes (Ethereum address).
-func (cr *CensusRef) Insert(key, value []byte) error {
+func (cr *CensusRef) Insert(key, value HexBytes) error {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
@@ -49,7 +49,7 @@ func (cr *CensusRef) Insert(key, value []byte) error {
 		return fmt.Errorf("key must be exactly 20 bytes (Ethereum address length), got %d", len(key))
 	}
 	addr := common.BytesToAddress(key)
-	weight := new(big.Int).SetBytes(value)
+	weight := value.BigInt().MathBigInt()
 
 	// Add to census (handles address-weight packing internally)
 	err := cr.tree.Add(addr, weight)
@@ -78,7 +78,7 @@ func (cr *CensusRef) Insert(key, value []byte) error {
 }
 
 // InsertBatch safely inserts a batch of key/value pairs into the Merkle tree.
-func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]interface{}, error) {
+func (cr *CensusRef) InsertBatch(keys, values []HexBytes) ([]interface{}, error) {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
@@ -95,7 +95,7 @@ func (cr *CensusRef) InsertBatch(keys, values [][]byte) ([]interface{}, error) {
 			return nil, fmt.Errorf("key %d must be 20 bytes, got %d", i, len(key))
 		}
 		addresses[i] = common.BytesToAddress(key)
-		weights[i] = new(big.Int).SetBytes(values[i])
+		weights[i] = values[i].BigInt().MathBigInt()
 	}
 
 	// Add bulk
@@ -141,7 +141,7 @@ func (cr *CensusRef) FetchKeysAndValues() ([]HexBytes, []*BigInt, error) {
 }
 
 // Root safely returns the current Merkle tree root.
-func (cr *CensusRef) Root() []byte {
+func (cr *CensusRef) Root() HexBytes {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 	root, exists := cr.tree.Root()
@@ -161,7 +161,7 @@ func (cr *CensusRef) Size() int {
 // GenProof safely generates a Merkle proof for the given leaf key.
 // It returns the proof components (key, value, siblings, index) and an inclusion boolean.
 // For lean-imt, key must be a 20-byte Ethereum address.
-func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, uint64, bool, error) {
+func (cr *CensusRef) GenProof(key HexBytes) (HexBytes, HexBytes, HexBytes, uint64, bool, error) {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
@@ -185,23 +185,23 @@ func (cr *CensusRef) GenProof(key []byte) ([]byte, []byte, []byte, uint64, bool,
 }
 
 // ApplyEvents safely applies a list of census events to the Merkle tree.
-func (cr *CensusRef) ApplyEvents(bigRoot *big.Int, events []census.CensusEvent) error {
+func (cr *CensusRef) ApplyEvents(root HexBytes, events []census.CensusEvent) error {
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
-	return cr.tree.ApplyEvents(bigRoot, events)
+	return cr.tree.ApplyEvents(root.BigInt().MathBigInt(), events)
 }
 
 // VerifyProof verifies a Merkle proof for the given leaf key.
 // Uses lean-imt verification with the configured hash function.
-func VerifyProof(key, value, root, siblings []byte, index uint64) bool {
+func VerifyProof(key, value, root, siblings HexBytes, index uint64) bool {
 	// Unpack siblings from bytes to []*big.Int
 	siblingsUnpacked := unpackSiblings(siblings)
 
 	// Create MerkleProof structure
 	merkleProof := leanimt.MerkleProof[*big.Int]{
-		Root:     new(big.Int).SetBytes(root),
-		Leaf:     new(big.Int).SetBytes(value),
+		Root:     root.BigInt().MathBigInt(),
+		Leaf:     value.BigInt().MathBigInt(),
 		Index:    index,
 		Siblings: siblingsUnpacked,
 	}

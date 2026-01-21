@@ -578,8 +578,8 @@ func (s *Server) handleAddParticipants(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build keys and values for batch insert
-	keys := make([][]byte, len(req.Participants))
-	values := make([][]byte, len(req.Participants))
+	keys := make([]types.HexBytes, len(req.Participants))
+	values := make([]types.HexBytes, len(req.Participants))
 
 	for i, participant := range req.Participants {
 		// Set default weight if not provided
@@ -588,7 +588,7 @@ func (s *Server) handleAddParticipants(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Process key (hash if too long)
-		key := []byte(participant.Key)
+		key := participant.Key
 		if len(key) > censusdb.CensusKeyMaxLen {
 			key = s.censusDB.TrunkKey(key)
 			if key == nil {
