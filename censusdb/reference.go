@@ -189,7 +189,7 @@ func (cr *CensusRef) ApplyEvents(root HexBytes, events []census.CensusEvent) err
 	cr.treeMu.Lock()
 	defer cr.treeMu.Unlock()
 
-	return cr.tree.ApplyEvents(root.BigInt().MathBigInt(), events)
+	return cr.tree.ApplyEvents(events)
 }
 
 // VerifyProof verifies a Merkle proof for the given leaf key.
