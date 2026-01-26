@@ -6,8 +6,8 @@ import (
 
 	"github.com/vocdoni/census3-bigquery/alchemy"
 	"github.com/vocdoni/census3-bigquery/bigquery"
-	"github.com/vocdoni/census3-bigquery/censusdb"
 	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/census/censusdb"
 	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
