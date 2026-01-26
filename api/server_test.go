@@ -11,8 +11,8 @@ import (
 
 	"github.com/frankban/quicktest"
 	"github.com/google/uuid"
-	"github.com/vocdoni/census3-bigquery/censusdb"
 	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/census/censusdb"
 	"github.com/vocdoni/davinci-node/db"
 	"github.com/vocdoni/davinci-node/db/metadb"
 	"github.com/vocdoni/davinci-node/types"
@@ -475,13 +475,13 @@ func TestAPIServerCensusProof(t *testing.T) {
 
 	c.Assert(w.Code, quicktest.Equals, http.StatusOK)
 
-	var response censusdb.CensusProof
+	var response types.CensusProof
 	err = json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
 	// Verify the proof contains the expected data
-	c.Assert(response.Root, quicktest.DeepEquals, censusdb.HexBytes(root))
-	c.Assert(response.Address, quicktest.DeepEquals, censusdb.HexBytes(testKey))
+	c.Assert(response.Root, quicktest.DeepEquals, types.HexBytes(root))
+	c.Assert(response.Address, quicktest.DeepEquals, types.HexBytes(testKey))
 	// Note: For lean-imt, the value is packed (address << 88 | weight), not the original value
 	c.Assert(response.Weight, quicktest.IsNotNil)
 
