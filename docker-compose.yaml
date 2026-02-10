@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: "ghcr.io/vocdoni/census3-bigquery:${CENSUS3_BIGQUERY_TAG:-main}"
     container_name: census3-bigquery-service
     env_file: .env
     ports:
@@ -11,7 +12,7 @@ services:
       # Persist census and snapshot data
       # Default data directory is $HOME/.bigcensus3, but can be configured via CENSUS3_DATA_DIR
       - census3_data:${CENSUS3_DATA_DIR:-/app/.bigcensus3}
-      
+
       # Mount queries configuration file
       # Make sure queries.yaml exists in the project root (copy from queries.yaml.example)
       - ./queries.yaml:/app/queries.yaml:ro
@@ -40,13 +41,64 @@ services:
         max-file: "3"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.census3-service.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.census3-service.rule=Host(`${DOMAIN}`)"
       - "traefik.http.routers.census3-service.entrypoints=websecure"
       - "traefik.http.routers.census3-service.tls=true"
       - "traefik.http.routers.census3-service.tls.certresolver=le"
       - "traefik.http.services.census3-service.loadbalancer.server.port=${CENSUS3_API_PORT:-8080}"
       - "traefik.http.routers.census3-service.tls.domains[0].main=${DOMAIN}"
       - "com.centurylinklabs.watchtower.enable=true"
+
+  census3-service-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: "ghcr.io/vocdoni/census3-bigquery:main"
+    container_name: census3-bigquery-service-dev
+    env_file: .envdev
+    ports:
+      - "8081:8081"
+    volumes:
+      # Persist census and snapshot data
+      # Default data directory is $HOME/.bigcensus3, but can be configured via CENSUS3_DATA_DIR
+      - census3_data_dev:${CENSUS3_DATA_DIR:-/app/.bigcensus3}
+
+      # Mount queries configuration file
+      # Make sure queries.yaml exists in the project root (copy from queries.yaml.example)
+      - ./queries-dev.yaml:/app/queries.yaml:ro
+    restart: ${RESTART:-unless-stopped}
+    # Decode base64 credentials and start service
+    command: >
+      sh -c "
+        if [ ! -z \"$$GOOGLE_APPLICATION_CREDENTIALS_JSON\" ]; then
+          echo \"Setting up Google Cloud credentials from base64...\"
+          echo \"$$GOOGLE_APPLICATION_CREDENTIALS_JSON\" | base64 -d > /tmp/gcp-credentials.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json
+        fi
+        echo \"Starting census3-bigquery service...\"
+        exec ./census3-service
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.census3-service-dev.rule=Host(`c3-dev.davinci.vote`)"
+      - "traefik.http.routers.census3-service-dev.entrypoints=websecure"
+      - "traefik.http.routers.census3-service-dev.tls=true"
+      - "traefik.http.routers.census3-service-dev.tls.certresolver=le"
+      - "traefik.http.services.census3-service-dev.loadbalancer.server.port=8081"
+      - "traefik.http.routers.census3-service-dev.tls.domains[0].main=c3-dev.davinci.vote"
+      - "com.centurylinklabs.watchtower.enable=true"
+
 
   traefik:
     image: traefik:3.4.1
@@ -57,7 +109,7 @@ services:
       - "./letsencrypt:/letsencrypt"
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     command:
-      - "--log.level=INFO"
+      - "--log.level=DEBUG"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -73,6 +125,7 @@ services:
     restart: ${RESTART:-unless-stopped}
     depends_on:
       - census3-service
+      - census3-service-dev
     profiles:
       - prod
 
@@ -89,4 +142,6 @@ services:
 
 volumes:
   census3_data:
+    driver: local
+  census3_data_dev:
     driver: local
