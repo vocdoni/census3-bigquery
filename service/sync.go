@@ -80,10 +80,10 @@ func (qr *QueryRunner) performSync() error {
 		"", // queryType
 		0,  // decimals
 		qr.config.Period.String(),
-		nil, // parameters
-		nil, // weightConfig
-		"",  // displayName
-		"",  // displayAvatar
+		nil,                          // parameters
+		nil,                          // weightConfig
+		qr.config.GetDisplayName(),   // displayName
+		qr.config.GetDisplayAvatar(), // displayAvatar
 	); err != nil {
 		return fmt.Errorf("store snapshot: %w", err)
 	}
