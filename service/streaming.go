@@ -6,8 +6,8 @@ import (
 
 	"github.com/vocdoni/census3-bigquery/alchemy"
 	"github.com/vocdoni/census3-bigquery/bigquery"
-	"github.com/vocdoni/census3-bigquery/censusdb"
 	"github.com/vocdoni/census3-bigquery/storage"
+	"github.com/vocdoni/davinci-node/census/censusdb"
 	"github.com/vocdoni/davinci-node/log"
 	"github.com/vocdoni/davinci-node/types"
 )
@@ -46,8 +46,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 
 	// Process participants in batches
 	var totalProcessed int
-	var batch [][]byte
-	var values [][]byte
+	var batch []types.HexBytes
+	var values []types.HexBytes
 	startTime := time.Now()
 	lastLogTime := startTime
 	queryID := qr.config.Name
@@ -117,8 +117,8 @@ func (qr *QueryRunner) streamAndCreateCensusBigQuery(censusRef *censusdb.CensusR
 				}
 
 				// Reset batch
-				batch = [][]byte{}
-				values = [][]byte{}
+				batch = []types.HexBytes{}
+				values = []types.HexBytes{}
 			}
 
 		case err := <-errorCh:
@@ -179,8 +179,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 
 	// Process participants in batches
 	var totalProcessed int
-	var batch [][]byte
-	var values [][]byte
+	var batch []types.HexBytes
+	var values []types.HexBytes
 	startTime := time.Now()
 	lastLogTime := startTime
 	queryID := qr.config.Name
@@ -250,8 +250,8 @@ func (qr *QueryRunner) streamAndCreateCensusAlchemy(censusRef *censusdb.CensusRe
 				}
 
 				// Reset batch
-				batch = [][]byte{}
-				values = [][]byte{}
+				batch = []types.HexBytes{}
+				values = []types.HexBytes{}
 			}
 
 		case err := <-errorCh:
