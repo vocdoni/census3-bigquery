@@ -1,6 +1,6 @@
 module github.com/vocdoni/census3-bigquery
 
-go 1.25.1
+go 1.25.5
 
 require (
 	cloud.google.com/go/bigquery v1.72.0
@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
-	github.com/vocdoni/davinci-node v0.0.0-20260126151452-44f4b083ffde
+	github.com/vocdoni/davinci-node v0.0.2-rc1
 	google.golang.org/api v0.255.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -35,8 +35,8 @@ require (
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
-	github.com/consensys/gnark v0.14.1-0.20251208223249-9af46fd442f3 // indirect
-	github.com/consensys/gnark-crypto v0.19.3-0.20251208215708-a16777bf2020 // indirect
+	github.com/consensys/gnark v0.14.1-0.20260126121332-407111efab55 // indirect
+	github.com/consensys/gnark-crypto v0.19.3-0.20260126145145-b5cf053fbc34 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.4.0 // indirect
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
@@ -58,12 +58,12 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.9.23+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20250820193118-f64d9cf942d6 // indirect
+	github.com/google/pprof v0.0.0-20251213031049-b05bdaca462f // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
-	github.com/iden3/go-iden3-crypto v0.0.17 // indirect
+	github.com/iden3/go-iden3-crypto v0.0.18-0.20241128121142-625bf563ffc5 // indirect
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -94,8 +94,9 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
-	github.com/vocdoni/arbo v0.0.0-20250904220709-07ccfd3090b5 // indirect
-	github.com/vocdoni/lean-imt-go v0.0.0-20260126110424-0b1c7ec41924 // indirect
+	github.com/vocdoni/arbo v0.0.0-20260224125436-30808c99dfb2 // indirect
+	github.com/vocdoni/davinci-node/spec v0.0.0-20260305103337-7a52760babbc // indirect
+	github.com/vocdoni/lean-imt-go v0.0.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
