@@ -642,7 +642,7 @@ func TestAPIServerCensusParticipantsInvalidRoot(t *testing.T) {
 	err := json.NewDecoder(w.Body).Decode(&response)
 	c.Assert(err, quicktest.IsNil)
 
-	c.Assert(response.Code, quicktest.Equals, 40010) // ErrInvalidCensusID
+	c.Assert(response.Code, quicktest.Equals, ErrInvalidCensusRoot.Code)
 }
 
 func TestAPIServerCensusParticipantsNotFound(t *testing.T) {
