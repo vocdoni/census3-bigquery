@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/bigquery v1.72.0
 	github.com/ethereum/go-ethereum v1.16.7
 	github.com/frankban/quicktest v1.14.6
-	github.com/go-chi/chi/v5 v5.2.3
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
